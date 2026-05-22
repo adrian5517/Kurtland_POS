@@ -1,9 +1,13 @@
 const { db } = require('../../db/pool')
 
 const productRepository = {
+  // 1. Updated to only return products that are NOT deleted
   async findAll() {
     const result = await db.query(
-      'SELECT id, name, sku, category, price::text, quantity, image_url, image_public_id, created_at::text FROM products ORDER BY id DESC',
+      `SELECT id, name, sku, category, price::text, quantity, image_url, image_public_id, created_at::text 
+       FROM products 
+       WHERE is_deleted = false 
+       ORDER BY id DESC`,
     )
     return result.rows
   },
@@ -74,9 +78,10 @@ const productRepository = {
     return result.rows[0] || null
   },
 
+  // 2. Changed from DELETE to UPDATE to safely hide products
   async delete(id) {
     const result = await db.query(
-      'DELETE FROM products WHERE id = $1 RETURNING id',
+      'UPDATE products SET is_deleted = true WHERE id = $1 RETURNING id',
       [id],
     )
 

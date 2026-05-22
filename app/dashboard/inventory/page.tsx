@@ -204,23 +204,25 @@ export default function InventoryPage() {
   const handleDeleteProduct = async (id: string) => {
     const session = getAuthSession()
 
-    if (!session?.token) {
-      throw new Error('Please sign in again to save products.')
+    if (!session?.token){
+      toast.error('Please sign in again to delete products.')
+      return
     }
-
-    const response = await apiFetch(`/api/products/${id}`, {
-      method: 'DELETE',
-      headers: apiHeaders(session.token),
-    })
-
-    if (!response.ok && response.status !== 204) {
-      const payload = await response.json().catch(() => null)
-      throw new Error(payload?.message || payload?.error || 'Failed to delete product')
+    try {
+      const response = await apiFetch(`/api/products/${id}`,{
+        method: 'DELETE',
+        headers: apiHeaders(session.token),
+      })
+      if (!response.ok && response.status !== 204){
+        const payload = await response.json().catch(() => null)
+        throw new Error(payload?.message || payload?.error || 'Failed to delete product')
+      }
+      const item = inventory.find(i => i.id === id)
+      setInventory(prev => prev.filter(item => item.id !== id))
+      toast.success(`${item?.name} deleted successfully`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete product')
     }
-
-    const item = inventory.find(i => i.id === id)
-    setInventory(prev => prev.filter(i => i.id !== id))
-    toast.success(`${item?.name} removed from inventory`)
   }
 
   const lowStockItems = inventory
