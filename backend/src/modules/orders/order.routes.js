@@ -7,5 +7,6 @@ const orderRouter = Router()
 
 orderRouter.use(requireAuth)
 orderRouter.post('/', orderController.store)
+orderRouter.get('/logs', orderController.getLogs)
 
 module.exports = { orderRouter }

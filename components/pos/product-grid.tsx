@@ -57,7 +57,7 @@ export default function POSProductGrid({
                 >
                   {/* Product Image */}
                   {product.image ? (
-                    <div className="relative h-32 w-full overflow-hidden bg-muted sm:h-36 md:h-40">
+                    <div className="relative h-40 w-full overflow-hidden bg-white sm:h-40 md:h-45">
                       <img
                         src={product.image}
                         alt={product.name}

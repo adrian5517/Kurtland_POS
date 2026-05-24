@@ -12,6 +12,7 @@ import ProductSelector from '@/components/pos/product-selector'
 import { apiFetch, apiHeaders } from '@/lib/api'
 import { getAuthSession } from '@/lib/auth'
 
+
 type ApiProduct = {
   id: number
   name: string
@@ -306,7 +307,7 @@ export default function POSDashboard() {
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto pr-1 -mr-1 lg:pr-2">
-            <POSProductGrid products={filteredProducts} onProductClick={addToCart} />
+            <POSProductGrid products={filteredProducts} onAddToCart={addToCart} />
           </div>
         </motion.section>
 

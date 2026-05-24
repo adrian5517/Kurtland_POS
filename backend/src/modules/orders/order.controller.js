@@ -9,6 +9,15 @@ const orderController = {
       next(error)
     }
   },
+
+  async getLogs(req, res, next) {
+    try {
+      const logs = await orderService.getOrderLogs()
+      return res.status(200).json({ data: logs })
+    } catch (error) {
+      next(error)
+    }
+  }
 }
 
 module.exports = { orderController }

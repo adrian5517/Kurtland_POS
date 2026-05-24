@@ -28,11 +28,15 @@ const orderService = {
   async createOrder(input, user) {
     const parsed = createOrderSchema.safeParse(input)
 
+    
+
     if (!parsed.success) {
       throw new HttpError(400, parsed.error.issues[0]?.message || 'Invalid order payload')
     }
 
     const client = await db.connect()
+
+    
 
     try {
       await client.query('BEGIN')
@@ -69,6 +73,8 @@ const orderService = {
         }
       })
 
+      
+
       const totalAmount = orderItems.reduce((sum, item) => sum + item.subtotal, 0)
 
       if (parsed.data.totalAmount && Math.abs(parsed.data.totalAmount - totalAmount) > 0.01) {
@@ -81,6 +87,7 @@ const orderService = {
 
       const changeAmount = parsed.data.amountPaid - totalAmount
 
+      // 1. Create the base Order document
       const order = await orderRepository.createOrder(client, {
         cashierId: user.id,
         cashierEmail: user.email,
@@ -89,11 +96,36 @@ const orderService = {
         changeAmount,
       })
 
+      // 2. LOG ENTRY: Order initialization tracking
+      await orderRepository.createLog(
+        client,
+        order.id,
+        'ORDER_CREATED',
+        `Order registered successfully by cashier ${user.email} with total balance PHP ${totalAmount.toFixed(2)}.`
+      )
+
+      // 3. Mount item matrices
       await orderRepository.createItems(client, order.id, orderItems)
 
+      // 4. Update core warehouse stock distributions and log individual updates
       for (const item of orderItems) {
         await orderRepository.decrementStock(client, item.productId, item.quantity)
+        
+        await orderRepository.createLog(
+          client,
+          order.id,
+          'STOCK_DECREMENTED',
+          `Reduced stock for item "${item.productName}" (SKU: ${item.sku}) by quantity ${item.quantity}.`
+        )
       }
+
+      // 5. FINAL LOG ENTRY: Lifecycle validation checkout confirmation
+      await orderRepository.createLog(
+        client,
+        order.id,
+        'CHECKOUT_COMPLETED',
+        `Payment finalized. Received: PHP ${parsed.data.amountPaid.toFixed(2)}. Change Given: PHP ${changeAmount.toFixed(2)}.`
+      )
 
       await client.query('COMMIT')
 
@@ -105,6 +137,9 @@ const orderService = {
       client.release()
     }
   },
+  async getOrderLogs() {
+    return await orderRepository.findAllLogs()
+  }
 }
 
 module.exports = { orderService }

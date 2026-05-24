@@ -3,11 +3,11 @@ const { db } = require('../../db/pool')
 const orderRepository = {
   async createOrder(client, input) {
     const result = await client.query(
-      `INSERT INTO orders (cashier_id, cashier_email, total_amount, amount_paid, change_amount)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, cashier_id, cashier_email, total_amount::text, amount_paid::text, change_amount::text, created_at`,
-      [input.cashierId, input.cashierEmail, input.totalAmount, input.amountPaid, input.changeAmount],
-    )
+  `INSERT INTO orders (cashier_id, cashier_email, total_amount, amount_paid, change_amount)
+   VALUES ($1, $2, $3, $4, $5)
+   RETURNING id, cashier_id, cashier_email, total_amount::text, amount_paid::text, change_amount::text, created_at`,
+  [input.cashierId, input.cashierEmail, input.totalAmount, input.amountPaid, input.changeAmount],
+)
 
     return result.rows[0]
   },
@@ -40,6 +40,24 @@ const orderRepository = {
       [productId, quantity],
     )
   },
+
+  async createLog(client, orderId, action, note) {
+    await client.query(
+      `INSERT INTO order_logs (order_id, action, note)
+       VALUES ($1, $2, $3)`,
+      [orderId, action, note]
+    )
+  },
+
+  async findAllLogs() {
+    const result = await db.query(
+      `SELECT id, order_id, action, note, created_at 
+       FROM order_logs 
+       ORDER BY created_at DESC 
+       LIMIT 200`
+    )
+    return result.rows
+  }
 }
 
 module.exports = { orderRepository }
