@@ -1,6 +1,8 @@
 const dotenv = require('dotenv')
 
-dotenv.config()
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config()
+}
 
 const env = {
   nodeEnv: process.env.NODE_ENV || 'development',

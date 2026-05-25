@@ -3,7 +3,8 @@ const { db } = require('../src/db/pool')
 const { env } = require('../src/config/env')
 
 async function main() {
-  const passwordHash = await bcrypt.hash('password', 10)
+  // Use the provided admin password ('admin') for demo login convenience
+  const passwordHash = await bcrypt.hash('admin', 10)
 
   await db.query(
     `INSERT INTO users (email, password_hash, name, role)

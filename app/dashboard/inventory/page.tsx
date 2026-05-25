@@ -213,7 +213,7 @@ export default function InventoryPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
-  // Pagination
+  // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState<typeof PAGE_SIZE_OPTIONS[number]>(10)
 
@@ -272,44 +272,58 @@ export default function InventoryPage() {
   // ── Filtering + sorting ─────────────────────────────────────────────────────
 
   const processedInventory = useMemo(() => {
-    let result = inventory.filter(item => {
-      const q = searchQuery.toLowerCase()
-      const matchSearch = !q ||
-        item.name.toLowerCase().includes(q) ||
-        item.code.toLowerCase().includes(q) ||
-        item.category.toLowerCase().includes(q)
-      const matchCategory = categoryFilter === 'all' || item.category === categoryFilter
-      
-      const status = stockStatus(item)
-      const matchStatus = statusFilter === 'all' || 
-                          (statusFilter === 'inactive' && !item.isActive) ||
-                          (statusFilter === 'stable' && item.isActive && status === 'stable') ||
-                          (statusFilter === 'low' && item.isActive && status === 'low') ||
-                          (statusFilter === 'out' && item.isActive && status === 'out')
-                          
-      return matchSearch && matchCategory && matchStatus
-    })
+  // Defensive check: Ensure inventory is an array
+  const safeInventory = Array.isArray(inventory) ? inventory : [];
 
-    result = [...result].sort((a, b) => {
-      let va: string | number = a[sortField]
-      let vb: string | number = b[sortField]
-      if (typeof va === 'string') va = va.toLowerCase()
-      if (typeof vb === 'string') vb = vb.toLowerCase()
-      if (va < vb) return sortDir === 'asc' ? -1 : 1
-      if (va > vb) return sortDir === 'asc' ? 1 : -1
-      return 0
-    })
+  let result = safeInventory.filter(item => {
+    const q = searchQuery.toLowerCase()
+    const matchSearch = !q ||
+      item.name.toLowerCase().includes(q) ||
+      item.code.toLowerCase().includes(q) ||
+      item.category.toLowerCase().includes(q)
+    const matchCategory = categoryFilter === 'all' || item.category === categoryFilter
+    
+    const status = stockStatus(item)
+    const matchStatus = statusFilter === 'all' || 
+                        (statusFilter === 'inactive' && !item.isActive) ||
+                        (statusFilter === 'stable' && item.isActive && status === 'stable') ||
+                        (statusFilter === 'low' && item.isActive && status === 'low') ||
+                        (statusFilter === 'out' && item.isActive && status === 'out')
+                        
+    return matchSearch && matchCategory && matchStatus
+  })
 
-    return result
-  }, [inventory, searchQuery, categoryFilter, statusFilter, sortField, sortDir])
+  result = [...result].sort((a, b) => {
+    let va: string | number = a[sortField]
+    let vb: string | number = b[sortField]
+    if (typeof va === 'string') va = va.toLowerCase()
+    if (typeof vb === 'string') vb = vb.toLowerCase()
+    if (va < vb) return sortDir === 'asc' ? -1 : 1
+    if (va > vb) return sortDir === 'asc' ? 1 : -1
+    return 0
+  })
 
-  useEffect(() => { setCurrentPage(1) }, [searchQuery, categoryFilter, statusFilter, sortField, sortDir, pageSize])
+  return result
+}, [inventory, searchQuery, categoryFilter, statusFilter, sortField, sortDir])
+  // Reset page safely when search query or filter options change
+  useEffect(() => { 
+    setCurrentPage(1) 
+  }, [searchQuery, categoryFilter, statusFilter, sortField, pageSize])
 
+  // Pagination Math calculations
   const totalPages = Math.max(1, Math.ceil(processedInventory.length / pageSize))
-  const paginatedInventory = processedInventory.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
-  )
+  
+  const paginatedInventory = useMemo(() => {
+    const startIdx = (currentPage - 1) * pageSize
+    return processedInventory.slice(startIdx, startIdx + pageSize)
+  }, [processedInventory, currentPage, pageSize])
+
+  const itemRange = useMemo(() => {
+    if (processedInventory.length === 0) return { start: 0, end: 0 }
+    const start = (currentPage - 1) * pageSize + 1
+    const end = Math.min(currentPage * pageSize, processedInventory.length)
+    return { start, end }
+  }, [processedInventory.length, currentPage, pageSize])
 
   function handleSort(field: SortField) {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -327,7 +341,7 @@ export default function InventoryPage() {
         headers: { ...Object.fromEntries(apiHeaders(session.token).entries()), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: productData.name, 
-          sku: productData.code,
+          sku: productData.sku,
           category: productData.category, 
           price: Number(productData.minPrice),
           srpPrice: Number(productData.srpPrice || 0),
@@ -593,12 +607,12 @@ export default function InventoryPage() {
                 {value !== 'all' && (
                   <span className={`rounded-md px-1 py-0 text-[10px] font-bold ${statusFilter === value ? 'bg-white/20' : 'bg-muted text-foreground'}`}>
                     {value === 'stable'
-                      ? inventory.filter(i => i.isActive && stockStatus(i) === 'stable').length
+                      ? (Array.isArray(inventory) ? inventory.filter(i => i.isActive && stockStatus(i) === 'stable').length : 0)
                       : value === 'low'
-                      ? ' ' + inventory.filter(i => i.isActive && stockStatus(i) === 'low').length
+                      ? ' ' + (Array.isArray(inventory) ? inventory.filter(i => i.isActive && stockStatus(i) === 'low').length : 0)
                       : value === 'out'
-                      ? inventory.filter(i => i.isActive && stockStatus(i) === 'out').length
-                      : inventory.filter(i => !i.isActive).length
+                      ? (Array.isArray(inventory) ? inventory.filter(i => i.isActive && stockStatus(i) === 'out').length : 0)
+                      : (Array.isArray(inventory) ? inventory.filter(i => !i.isActive).length : 0)
                     }
                   </span>
                 )}
@@ -755,59 +769,55 @@ export default function InventoryPage() {
                           )}
                         </td>
 
-                        {/* SRP / Cost Profile Price */}
-                        <td className="px-5 py-3.5 text-right font-mono text-sm tabular-nums text-muted-foreground">
-                          ₱{item.srpPrice.toFixed(2)}
+                        {/* Cost/SRP */}
+                        <td className="px-5 py-3.5 text-left font-mono text-xs text-muted-foreground">
+                          ₱{item.minPrice.toFixed(2)} / <strong className="text-foreground">₱{item.srpPrice.toFixed(2)}</strong>
                         </td>
 
-                        {/* Selling Price */}
-                        <td className="px-5 py-3.5 text-right font-mono text-sm font-semibold tabular-nums text-foreground">
+                        {/* Retail Price */}
+                        <td className="px-5 py-3.5 text-left font-mono font-bold text-foreground text-sm">
                           ₱{item.minPrice.toFixed(2)}
                         </td>
 
-                        {/* Min Stock Flag Level */}
-                        <td className="px-5 py-3.5 text-right font-mono text-xs text-muted-foreground tabular-nums">
-                          {item.minStock}
+                        {/* Alert At */}
+                        <td className="px-5 py-3.5 text-right font-mono text-xs text-muted-foreground font-semibold">
+                          {item.minStock} units
                         </td>
 
-                        {/* Status Badge layout */}
+                        {/* Status */}
                         <td className="px-5 py-3.5 text-center">
                           <StatusBadge status={status} isActive={item.isActive} />
                         </td>
 
-                        {/* Dynamic actions row button panel */}
+                        {/* Actions */}
                         <td className="px-5 py-3.5 text-center">
                           <div className="flex items-center justify-center gap-1">
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
-                              onClick={() => toggleProductActiveStatus(item)}
-                              title={item.isActive ? "Deactivate Product" : "Activate Product"}
-                            >
-                              {item.isActive ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 rounded-lg text-muted-foreground hover:text-primary"
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground rounded-lg"
                               onClick={() => setEditingProduct(item)}
-                              title="Edit Details"
                             >
-                              <Edit2 className="h-4 w-4" />
+                              <Edit2 className="h-3.5 w-3.5" />
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive"
-                              onClick={() => {
-                                if (confirm(`Are you sure you want to delete ${item.name}?`)) {
-                                  void handleDeleteProduct(item.id)
-                                }
-                              }}
-                              title="Delete Product"
+                              className={`h-8 w-8 rounded-lg ${item.isActive ? 'text-muted-foreground hover:text-amber-600' : 'text-amber-600 hover:text-amber-700'}`}
+                              onClick={() => toggleProductActiveStatus(item)}
+                              title={item.isActive ? "Deactivate product" : "Activate product"}
                             >
-                              <Trash2 className="h-4 w-4" />
+                              {item.isActive ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive rounded-lg"
+                              onClick={() => {
+                                if (confirm(`Delete ${item.name}?`)) handleDeleteProduct(item.id)
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </div>
                         </td>
@@ -819,57 +829,69 @@ export default function InventoryPage() {
             </table>
           </div>
 
-          {/* ── Pagination UI Layout Block ── */}
-          <div className="px-5 py-4 border-t flex items-center justify-between flex-col sm:flex-row gap-4 bg-muted/20">
-            <p className="text-xs text-muted-foreground font-medium">
-              Page <span className="text-foreground font-semibold">{currentPage}</span> of{' '}
-              <span className="text-foreground font-semibold">{totalPages}</span>
-            </p>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 rounded-lg"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(1)}
-              >
-                <ChevronsLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 rounded-lg"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(prev => prev - 1)}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 rounded-lg"
-                disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage(prev => prev + 1)}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 rounded-lg"
-                disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage(totalPages)}
-              >
-                <ChevronsRight className="h-4 w-4" />
-              </Button>
+          {/* ── Dynamic Pagination Controls Footer ── */}
+          {!isLoading && processedInventory.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-5 py-4 border-t bg-muted/20">
+              <div className="text-xs font-medium text-muted-foreground">
+                Showing <span className="font-bold text-foreground">{itemRange.start}</span> to{' '}
+                <span className="font-bold text-foreground">{itemRange.end}</span> of{' '}
+                <span className="font-bold text-foreground">{processedInventory.length}</span> entries
+              </div>
+              
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 rounded-lg hidden sm:flex"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronsLeft className="h-4 w-4" />
+                </Button>
+                
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 rounded-lg"
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                <div className="flex items-center justify-center text-xs font-semibold px-3 min-w-[80px]">
+                  Page {currentPage} of {totalPages}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 rounded-lg"
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 rounded-lg hidden sm:flex"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                >
+                  <ChevronsRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
 
       {/* ── Overlays and Modal Systems ── */}
       {showAddProduct && (
         <ProductForm
+          product={null}
           onClose={() => setShowAddProduct(false)}
           onSubmit={handleAddProduct}
         />

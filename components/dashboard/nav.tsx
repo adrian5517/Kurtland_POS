@@ -45,7 +45,7 @@ type NavLinkProps = {
 function Initials({ email, role }: InitialsProps) {
   const letters = (email || 'KP').split('@')[0].slice(0, 2).toUpperCase()
   const palette = {
-    admin:   { bg: '#f28c1f22', border: '#f28c1f55', text: '#f28c1f' },
+    admin:   { bg: '#cf863922', border: '#f28c1f55', text: '#f28c1f' },
     cashier: { bg: '#3b82f622', border: '#3b82f655', text: '#93c5fd' },
   }
   const { bg, border, text } = palette[role] ?? palette.cashier

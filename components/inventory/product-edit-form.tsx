@@ -21,7 +21,6 @@ interface Product {
   code: string
   name: string
   category: string
-  minStock: number
   minPrice: number
   maxPrice: number
   currentStock: number
@@ -32,39 +31,15 @@ interface ProductEditFormProps {
   product: Product | null
   onClose: () => void
   onSubmit: (data: any) => Promise<void> | void
+  categories?: string[]
+  isAdmin?: boolean
 }
 
 export default function ProductEditForm({
   product,
   onClose,
   onSubmit,
-}: ProductEditFormProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const cameraInputRef = useRef<HTMLInputElement>(null)
-  const [formData, setFormData] = useState({
-    name: product?.name || '',
-    category: product?.category || '',
-    minPrice: product?.minPrice || 0,
-    maxPrice: product?.maxPrice || 0,
-  })
-  const [previewUrl, setPreviewUrl] = useState<string | null>(product?.image || null)
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [imageRemoved, setImageRemoved] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-
-  useEffect(() => {
-    setFormData({
-      name: product?.name || '',
-      category: product?.category || '',
-      minPrice: product?.minPrice || 0,
-      maxPrice: product?.maxPrice || 0,
-    })
-    setPreviewUrl(product?.image || null)
-    setSelectedFile(null)
-    setImageRemoved(false)
-  }, [product])
-
-  const categories = [
+  categories = [
     'Pizza',
     'Burgers',
     'Drinks',
@@ -73,7 +48,39 @@ export default function ProductEditForm({
     'Pasta',
     'Appetizers',
     'Main Course',
-  ]
+  ],
+  isAdmin = false,
+}: ProductEditFormProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const [formData, setFormData] = useState({
+    name: product?.name || '',
+    category: product?.category || '',
+    minPrice: product?.minPrice || 0,
+    maxPrice: product?.maxPrice || 0,
+    minStock: (product as any)?.minStock || 5,
+  })
+  const [previewUrl, setPreviewUrl] = useState<string | null>(product?.image || null)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [imageRemoved, setImageRemoved] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false)
+  const [newCategory, setNewCategory] = useState('')
+
+  useEffect(() => {
+    setFormData({
+      name: product?.name || '',
+      category: product?.category || '',
+      minPrice: product?.minPrice || 0,
+      maxPrice: product?.maxPrice || 0,
+      minStock: (product as any)?.minStock || 5,
+    })
+    setPreviewUrl(product?.image || null)
+    setSelectedFile(null)
+    setImageRemoved(false)
+  }, [product])
+
+  
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -91,7 +98,10 @@ export default function ProductEditForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.name || !formData.category || formData.minPrice <= 0) {
+    const categoryToUse = showNewCategoryInput ? newCategory.trim() : formData.category
+    const minStockNum = Number(formData.minStock)
+
+    if (!formData.name || !categoryToUse || formData.minPrice <= 0) {
       alert('Please fill in all required fields')
       return
     }
@@ -128,9 +138,10 @@ export default function ProductEditForm({
 
       await onSubmit({
         name: formData.name,
-        category: formData.category,
+        category: categoryToUse,
         minPrice: formData.minPrice,
         maxPrice: formData.maxPrice,
+        minStock: isNaN(minStockNum) ? 5 : minStockNum,
         imageUrl,
         imagePublicId,
       })
@@ -143,7 +154,7 @@ export default function ProductEditForm({
     }
   }
 
-  if (!product) return null
+  
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -245,18 +256,38 @@ export default function ProductEditForm({
               <Label htmlFor="category" className="text-sm font-semibold">
                 Category
               </Label>
-              <Select value={formData.category} onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))}>
-                <SelectTrigger className="border-primary/20">
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div>
+                <Select
+                  value={showNewCategoryInput ? '__new__' : formData.category}
+                  onValueChange={(value) => {
+                    if (value === '__new__') {
+                      if (!isAdmin) return
+                      setShowNewCategoryInput(true)
+                      setFormData(prev => ({ ...prev, category: '' }))
+                    } else {
+                      setShowNewCategoryInput(false)
+                      setFormData(prev => ({ ...prev, category: value }))
+                    }
+                  }}
+                >
+                  <SelectTrigger className="border-primary/20">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat} value={cat}>
+                        {cat}
+                      </SelectItem>
+                    ))}
+                    {isAdmin && <SelectItem key="__new__" value="__new__">Add new category…</SelectItem>}
+                  </SelectContent>
+                </Select>
+                {showNewCategoryInput && isAdmin && (
+                  <div className="pt-2">
+                    <Input placeholder="New category name" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} />
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Prices */}
@@ -283,6 +314,17 @@ export default function ProductEditForm({
                   type="number"
                   value={formData.maxPrice || ''}
                   onChange={(e) => setFormData(prev => ({ ...prev, maxPrice: parseFloat(e.target.value) || 0 }))}
+                  placeholder="0"
+                  className="border-primary/20"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="minStock" className="text-sm font-semibold">Min Stock Alert</Label>
+                <Input
+                  id="minStock"
+                  type="number"
+                  value={formData.minStock || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, minStock: parseInt(e.target.value, 10) || 0 }))}
                   placeholder="0"
                   className="border-primary/20"
                 />

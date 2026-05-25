@@ -22,17 +22,18 @@ interface Product {
   code: string
   name: string
   category: string
-  minStock: number
   minPrice: number
   maxPrice: number
   currentStock: number
   image: string | null
 }
 
-interface ProductEditFormProps {
+interface ProductFormProps {
   product?: Product | null
   onClose: () => void
   onSubmit: (data: any) => Promise<void> | void
+  categories?: string[]
+  isAdmin?: boolean
 }
 
 const CATEGORIES = [
@@ -46,21 +47,22 @@ const CATEGORIES = [
   'Main Course',
 ]
 
-export default function ProductEditForm({
+export default function ProductForm({
   product,
   onClose,
   onSubmit,
-}: ProductEditFormProps) {
+  categories = [],
+  isAdmin = false,
+}: ProductFormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   
   const [formData, setFormData] = useState({
     name: '',
-    code: '',
     category: '',
     minPrice: '',
     maxPrice: '',
-    currentStock: '',
+    stock: '',
     minStock: '',
   })
   
@@ -68,23 +70,24 @@ export default function ProductEditForm({
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [imageRemoved, setImageRemoved] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false)
+  const [newCategory, setNewCategory] = useState('')
 
   useEffect(() => {
     if (product) {
       setFormData({
         name: product.name || '',
-        code: product.code || '',
         category: product.category || '',
         minPrice: product.minPrice?.toString() || '0',
         maxPrice: product.maxPrice?.toString() || '0',
-        currentStock: product.currentStock?.toString() || '0',
-        minStock: product.minStock?.toString() || '5',
+        stock: product.currentStock?.toString() || '0',
+        minStock: (product as any).minStock?.toString() || '5',
       })
       setPreviewUrl(product.image || null)
       setSelectedFile(null)
       setImageRemoved(false)
     }
-  } , [product])
+  }, [product])
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -104,11 +107,12 @@ export default function ProductEditForm({
 
     const minPriceNum = parseFloat(formData.minPrice)
     const maxPriceNum = formData.maxPrice ? parseFloat(formData.maxPrice) : minPriceNum
-    const stockNum = parseInt(formData.currentStock, 10)
+    const stockNum = parseInt(formData.stock, 10)
     const minStockNum = parseInt(formData.minStock, 10)
 
-    if (!formData.name || !formData.category || isNaN(minPriceNum) || minPriceNum < 0) {
-      toast.error('Please fill in all required fields accurately')
+    const categoryToUse = showNewCategoryInput ? newCategory.trim() : formData.category
+    if (!formData.name || !categoryToUse || isNaN(minPriceNum) || minPriceNum <= 0) {
+      toast.error('Please fill in all required fields accurately. Price must be positive.')
       return
     }
 
@@ -121,7 +125,7 @@ export default function ProductEditForm({
 
     try {
       const session = getAuthSession()
-      let imageUrl: string | null | undefined = undefined // undefined leaves it unchanged in backend update
+      let imageUrl: string | null | undefined = undefined
       let imagePublicId: string | null | undefined = undefined
 
       if (selectedFile) {
@@ -153,16 +157,15 @@ export default function ProductEditForm({
 
       await onSubmit({
         name: formData.name,
-        category: formData.category,
+        category: categoryToUse,
         minPrice: minPriceNum,
         maxPrice: maxPriceNum,
-        currentStock: stockNum,
-        minStock: minStockNum,
+        stock: isNaN(stockNum) ? 0 : stockNum,
+        minStock: isNaN(minStockNum) ? 5 : minStockNum,
         imageUrl,
         imagePublicId,
       })
 
-      toast.success('Product updated successfully')
       onClose()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to save product')
@@ -171,225 +174,155 @@ export default function ProductEditForm({
     }
   }
 
-  if (!product) return null
-
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
       <Card className="w-full max-w-2xl border-primary/20 my-8">
         <CardHeader className="flex flex-row justify-between items-center pb-4 border-b">
-          <CardTitle className="text-primary text-xl">Edit Product</CardTitle>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-            className="h-8 w-8 p-0"
-          >
+          <CardTitle className="text-primary text-xl">Add New Product</CardTitle>
+          <Button type="button" variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0" >
             <X className="h-5 w-5" />
           </Button>
         </CardHeader>
-
         <CardContent className="pt-6">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Product Image Handling */}
+              
               <div className="space-y-3">
                 <Label className="text-sm font-semibold">Product Image</Label>
                 {previewUrl ? (
                   <div className="relative w-full h-44 rounded-lg overflow-hidden bg-muted border border-primary/20">
-                    <img
-                      src={previewUrl}
-                      alt="Product preview"
-                      className="w-full h-full object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPreviewUrl(null)
-                        setSelectedFile(null)
-                        setImageRemoved(true)
-                        if (fileInputRef.current) fileInputRef.current.value = ''
-                        if (cameraInputRef.current) cameraInputRef.current.value = ''
-                      }}
-                      className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600"
-                    >
+                    <img src={previewUrl} alt="Product preview" className="w-full h-full object-cover" />
+                    <button type="button" onClick={() => { setPreviewUrl(null); setSelectedFile(null); setImageRemoved(true); }} className="absolute top-2 right-2 bg-destructive text-destructive-foreground p-1 rounded-full hover:bg-destructive/90 transition-colors shadow-sm">
                       <X className="h-4 w-4" />
                     </button>
                   </div>
                 ) : (
-                  <div className="w-full h-44 border-2 border-dashed border-primary/30 rounded-lg flex items-center justify-center bg-muted/30">
-                    <p className="text-muted-foreground text-sm">No image selected</p>
+                  <div className="flex flex-col gap-2">
+                    <div onClick={() => fileInputRef.current?.click()} className="w-full h-44 rounded-lg border-2 border-dashed border-primary/20 hover:border-primary/40 flex flex-col items-center justify-center gap-2 cursor-pointer bg-muted/30 hover:bg-muted/50 transition-all text-muted-foreground">
+                      <Upload className="h-8 w-8 text-primary/60" />
+                      <span className="text-xs font-medium">Upload via local storage</span>
+                    </div>
+                    <div onClick={() => cameraInputRef.current?.click()} className="w-full py-2.5 rounded-lg border border-primary/20 hover:bg-muted/50 flex items-center justify-center gap-2 cursor-pointer text-xs font-medium text-muted-foreground transition-all">
+                      <Camera className="h-4 w-4 text-primary/60" />
+                      Take Live Photo
+                    </div>
                   </div>
                 )}
-
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1 border-primary/20 gap-2"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Upload className="h-4 w-4" />
-                    Upload Image
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1 border-primary/20 gap-2"
-                    onClick={() => cameraInputRef.current?.click()}
-                  >
-                    <Camera className="h-4 w-4" />
-                    Take Photo
-                  </Button>
-                </div>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                  className="hidden"
-                />
-                <input
-                  ref={cameraInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handleImageChange}
-                  className="hidden"
-                />
+                <input type="file" ref={fileInputRef} accept="image/*" onChange={handleImageChange} className="hidden" />
+                <input type="file" ref={cameraInputRef} accept="image/*" capture="environment" onChange={handleImageChange} className="hidden" />
               </div>
 
-              {/* Product Info Section */}
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-code" className="text-sm font-semibold text-muted-foreground">
-                    Product Code (Immutable)
-                  </Label>
+                  <Label htmlFor="name">Product Name</Label>
                   <Input
-                    id="edit-code"
-                    value={formData.code}
-                    disabled
-                    className="bg-muted/50 border-primary/10 select-none opacity-70"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="edit-name" className="text-sm font-semibold">
-                    Product Name *
-                  </Label>
-                  <Input
-                    id="edit-name"
+                    id="name"
                     value={formData.name}
                     onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder="Enter product name"
+                    placeholder="e.g., Pepperoni Pizza Large"
                     className="border-primary/20"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="edit-category" className="text-sm font-semibold">
-                    Category *
-                  </Label>
-                  <Select 
-                    value={formData.category} 
-                    onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))}
-                  >
-                    <SelectTrigger id="edit-category" className="border-primary/20">
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CATEGORIES.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {cat}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="category">Category</Label>
+                  <div>
+                    <Select
+                      value={showNewCategoryInput ? '__new__' : formData.category}
+                      onValueChange={(value) => {
+                        if (value === '__new__') {
+                          if (!isAdmin) {
+                            // non-admin safety: ignore
+                            return
+                          }
+                          setShowNewCategoryInput(true)
+                          setFormData(prev => ({ ...prev, category: '' }))
+                        } else {
+                          setShowNewCategoryInput(false)
+                          setFormData(prev => ({ ...prev, category: value }))
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="border-primary/20">
+                        <SelectValue placeholder="Select inventory category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(categories && categories.length > 0 ? categories : CATEGORIES).map((cat) => (
+                          <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                        ))}
+                        {isAdmin && (
+                          <SelectItem key="__new__" value="__new__">Add new category…</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {showNewCategoryInput && isAdmin && (
+                      <div className="pt-2">
+                        <Input
+                          placeholder="New category name"
+                          value={newCategory}
+                          onChange={(e) => setNewCategory(e.target.value)}
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Pricing Details */}
-            <div className="bg-muted/40 p-4 rounded-lg space-y-3 border border-primary/10">
-              <Label className="font-semibold block">Pricing</Label>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-minPrice" className="text-xs">
-                    Min Price (₱) *
-                  </Label>
-                  <Input
-                    id="edit-minPrice"
-                    type="number"
-                    step="0.01"
-                    value={formData.minPrice}
-                    onChange={(e) => setFormData(prev => ({ ...prev, minPrice: e.target.value }))}
-                    className="border-primary/20"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-maxPrice" className="text-xs">
-                    Max Price (₱)
-                  </Label>
-                  <Input
-                    id="edit-maxPrice"
-                    type="number"
-                    step="0.01"
-                    value={formData.maxPrice}
-                    onChange={(e) => setFormData(prev => ({ ...prev, maxPrice: e.target.value }))}
-                    className="border-primary/20"
-                  />
-                </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 border-t border-primary/10 pt-4">
+              <div className="space-y-2">
+                <Label htmlFor="minPrice" className="text-xs">Base Price (₱)</Label>
+                <Input
+                  id="minPrice"
+                  type="number"
+                  step="0.01"
+                  value={formData.minPrice}
+                  onChange={(e) => setFormData(prev => ({ ...prev, minPrice: e.target.value }))}
+                  placeholder="0.00"
+                  className="border-primary/20"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="minStock" className="text-xs">Min Stock Alert</Label>
+                <Input
+                  id="minStock"
+                  type="number"
+                  value={formData.minStock}
+                  onChange={(e) => setFormData(prev => ({ ...prev, minStock: e.target.value }))}
+                  className="border-primary/20"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="maxPrice" className="text-xs">SRP Reference (₱)</Label>
+                <Input
+                  id="maxPrice"
+                  type="number"
+                  step="0.01"
+                  value={formData.maxPrice}
+                  onChange={(e) => setFormData(prev => ({ ...prev, maxPrice: e.target.value }))}
+                  placeholder="0.00"
+                  className="border-primary/20"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="stock" className="text-xs">Initial Quantity</Label>
+                <Input
+                  id="stock"
+                  type="number"
+                  value={formData.stock}
+                  onChange={(e) => setFormData(prev => ({ ...prev, stock: e.target.value }))}
+                  className="border-primary/20"
+                />
               </div>
             </div>
+            
 
-            {/* Inventory Management Updates */}
-            <div className="bg-muted/40 p-4 rounded-lg space-y-3 border border-primary/10">
-              <Label className="font-semibold block">Stock Management</Label>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-stock" className="text-xs">
-                    Current Stock *
-                  </Label>
-                  <Input
-                    id="edit-stock"
-                    type="number"
-                    value={formData.currentStock}
-                    onChange={(e) => setFormData(prev => ({ ...prev, currentStock: e.target.value }))}
-                    className="border-primary/20"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-minStock" className="text-xs">
-                    Min Stock Alert
-                  </Label>
-                  <Input
-                    id="edit-minStock"
-                    type="number"
-                    value={formData.minStock}
-                    onChange={(e) => setFormData(prev => ({ ...prev, minStock: e.target.value }))}
-                    className="border-primary/20"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
             <div className="flex gap-3 pt-4 border-t border-primary/10">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onClose}
-                className="flex-1 border-primary/20"
-              >
+              <Button type="button" variant="outline" onClick={onClose} className="flex-1 border-primary/20" >
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                disabled={isSubmitting}
-                className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
-              >
-                {isSubmitting ? 'Saving...' : 'Save Changes'}
+              <Button type="submit" disabled={isSubmitting} className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold" >
+                {isSubmitting ? 'Saving...' : 'Add Product'}
               </Button>
             </div>
           </form>

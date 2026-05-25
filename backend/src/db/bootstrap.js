@@ -23,6 +23,8 @@ async function bootstrapDatabase() {
       sku TEXT NOT NULL UNIQUE,
       category TEXT NOT NULL DEFAULT 'Products',
       price NUMERIC(10, 2) NOT NULL,
+      srp_price NUMERIC(10, 2) NOT NULL DEFAULT 0,
+      min_stock INTEGER NOT NULL DEFAULT 5,
       quantity INTEGER NOT NULL DEFAULT 0,
       image_url TEXT,
       image_public_id TEXT,
@@ -52,22 +54,50 @@ async function bootstrapDatabase() {
   `)
 
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS products_sku_idx ON products (sku)')
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS sku_counters (
+      prefix TEXT PRIMARY KEY,
+      last_value INTEGER NOT NULL DEFAULT 0
+    )
+  `)
   await db.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'Products'")
+  await db.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS srp_price NUMERIC(10, 2) NOT NULL DEFAULT 0')
   await db.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT')
   await db.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS image_public_id TEXT')
+  await db.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS min_stock INTEGER NOT NULL DEFAULT 5')
 
   const { rows } = await db.query('SELECT COUNT(*)::int AS count FROM products')
 
   if (rows[0]?.count === 0) {
     for (const product of STARTER_PRODUCTS) {
       await db.query(
-        `INSERT INTO products (name, sku, category, price, quantity)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO products (name, sku, category, price, srp_price, min_stock, quantity)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (sku) DO NOTHING`,
-        [product.name, product.sku, product.category || 'Products', product.price, product.quantity],
+        [product.name, product.sku, product.category || 'Products', product.price, 0, 5, product.quantity],
       )
     }
   }
+    // Seed/repair sku_counters from existing products to ensure counters start
+    // after the highest suffix observed for each prefix (first-3-letter prefix).
+    await db.query(`
+      WITH parts AS (
+        SELECT sku,
+               UPPER(regexp_replace(sku, '\\d+$', '')) AS prefix_letters,
+               regexp_replace(sku, '^\\D+', '') AS suffix_digits
+        FROM products
+        WHERE sku ~ '\\d$'
+      ),
+      agg AS (
+        SELECT SUBSTRING(prefix_letters FROM 1 FOR 3) AS prefix3,
+               MAX(COALESCE(NULLIF(suffix_digits, ''), '0')::int) AS max_suffix
+        FROM parts
+        GROUP BY SUBSTRING(prefix_letters FROM 1 FOR 3)
+      )
+      INSERT INTO sku_counters(prefix, last_value)
+      SELECT prefix3, max_suffix FROM agg
+      ON CONFLICT (prefix) DO UPDATE
+      SET last_value = GREATEST(sku_counters.last_value, EXCLUDED.last_value)
+    `)
 }
-
 module.exports = { bootstrapDatabase }
