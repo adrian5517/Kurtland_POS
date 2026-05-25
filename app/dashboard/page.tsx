@@ -307,7 +307,7 @@ export default function POSDashboard() {
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto pr-1 -mr-1 lg:pr-2">
-            <POSProductGrid products={filteredProducts} onAddToCart={addToCart} />
+            <POSProductGrid products={filteredProducts}  onProductClick={addToCart} />
           </div>
         </motion.section>
 
