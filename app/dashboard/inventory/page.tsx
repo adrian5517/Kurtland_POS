@@ -197,6 +197,14 @@ function StockBar({ current, min }: { current: number; min: number }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function InventoryPage() {
+  // Derive admin status from the auth session role field.
+  // Adjust the role string(s) to match your actual auth payload.
+  const isAdmin = useMemo(() => {
+    const session = getAuthSession()
+    const role = (session as any)?.role ?? (session as any)?.user?.role ?? ''
+    return role === 'admin' || role === 'ADMIN' || role === 'superadmin'
+  }, [])
+
   const [inventory, setInventory] = useState<InventoryItem[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
@@ -894,6 +902,8 @@ export default function InventoryPage() {
           product={null}
           onClose={() => setShowAddProduct(false)}
           onSubmit={handleAddProduct}
+          categories={categories.filter(c => c !== 'all')}
+          isAdmin={isAdmin}
         />
       )}
 
@@ -902,6 +912,8 @@ export default function InventoryPage() {
           product={editingProduct}
           onClose={() => setEditingProduct(null)}
           onSubmit={handleEditProduct}
+          categories={categories.filter(c => c !== 'all')}
+          isAdmin={isAdmin}
         />
       )}
     </div>
