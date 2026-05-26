@@ -65,6 +65,8 @@ async function bootstrapDatabase() {
   await db.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT')
   await db.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS image_public_id TEXT')
   await db.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS min_stock INTEGER NOT NULL DEFAULT 5')
+  await db.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true')
+  await db.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT false')
 
   const { rows } = await db.query('SELECT COUNT(*)::int AS count FROM products')
 

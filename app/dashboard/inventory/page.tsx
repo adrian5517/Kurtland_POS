@@ -405,13 +405,18 @@ export default function InventoryPage() {
       const response = await apiFetch(`/api/products/${item.id}`, {
         method: 'PUT',
         headers: { ...Object.fromEntries(apiHeaders(session.token).entries()), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_active: updatedState }),
+        body: JSON.stringify({ isActive: updatedState }),
       })
-      if (!response.ok) throw new Error()
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null)
+        throw new Error(payload?.message || payload?.error || 'Failed to change activation flag lifecycle state')
+      }
+
       setInventory(prev => prev.map(p => p.id === item.id ? { ...p, isActive: updatedState } : p))
       toast.success(`Product configured to ${updatedState ? 'Active' : 'Inactive'}`)
-    } catch {
-      toast.error('Failed to change activation flag lifecycle state')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to change activation flag lifecycle state')
     }
   }
 

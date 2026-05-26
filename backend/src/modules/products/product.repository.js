@@ -65,12 +65,12 @@ const productRepository = {
         sku,
         input.category,
         input.price,
-        input.srpPrice ?? 0.00,
-        input.minStock ?? 5,
+        input.srpPrice ?? input.srp_price ?? 0.00,
+        input.minStock ?? input.min_stock ?? 5,
         input.quantity ?? 0,
-        input.isActive ?? true,
-        input.imageUrl ?? null,
-        input.imagePublicId ?? null,
+        input.isActive ?? input.is_active ?? true,
+        input.imageUrl ?? input.image_url ?? null,
+        input.imagePublicId ?? input.image_public_id ?? null,
       ],
     )
 
@@ -113,17 +113,17 @@ const productRepository = {
     pushField('sku', input.sku)
     pushField('category', input.category)
     pushField('price', input.price)
-    pushField('srp_price', input.srpPrice)      // 💡 Dinagdag para sa dynamic query engine
-    pushField('min_stock', input.minStock)
+    pushField('srp_price', input.srpPrice !== undefined ? input.srpPrice : input.srp_price)      // 💡 Dinagdag para sa dynamic query engine
+    pushField('min_stock', input.minStock !== undefined ? input.minStock : input.min_stock)
     pushField('quantity', input.quantity)
-    pushField('is_active', input.isActive)      // 💡 Dinagdag para sa toggle action updates
+    pushField('is_active', input.isActive !== undefined ? input.isActive : input.is_active)      // 💡 Dinagdag para sa toggle action updates
 
-    if (Object.prototype.hasOwnProperty.call(input, 'imageUrl')) {
-      pushField('image_url', input.imageUrl)
+    if (Object.prototype.hasOwnProperty.call(input, 'imageUrl') || Object.prototype.hasOwnProperty.call(input, 'image_url')) {
+      pushField('image_url', input.imageUrl !== undefined ? input.imageUrl : input.image_url)
     }
 
-    if (Object.prototype.hasOwnProperty.call(input, 'imagePublicId')) {
-      pushField('image_public_id', input.imagePublicId)
+    if (Object.prototype.hasOwnProperty.call(input, 'imagePublicId') || Object.prototype.hasOwnProperty.call(input, 'image_public_id')) {
+      pushField('image_public_id', input.imagePublicId !== undefined ? input.imagePublicId : input.image_public_id)
     }
 
     // Fallback block if empty schema arrays were verified
@@ -139,6 +139,7 @@ const productRepository = {
     }
 
     values.push(id)
+    console.debug('productRepository.update', { fields, values, id })
 
     const result = await db.query(
       `UPDATE products

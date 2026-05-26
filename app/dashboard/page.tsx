@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { Search, ShoppingBag, SlidersHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
-import POSProductGrid from '@/components/pos/product-grid'
+import POSProductGrid, { type POSProduct } from '@/components/pos/product-grid'
 import POSCart from '@/components/pos/cart'
 import ProductSelector from '@/components/pos/product-selector'
 import { apiFetch, apiHeaders } from '@/lib/api'
@@ -22,21 +23,11 @@ type ApiProduct = {
   quantity: number
   image_url: string | null
   image_public_id: string | null
+  is_active?: boolean
   created_at: string
 }
 
-type Product = {
-  id: string
-  code: string
-  name: string
-  category: string
-  minPrice: number
-  maxPrice: number
-  price: number
-  currentStock: number
-  stock: number
-  image: string | null
-}
+type Product = POSProduct
 
 type CheckoutPayload = {
   items: Array<{ id: string; name: string; price: number; quantity: number; subtotal: number }>
@@ -81,6 +72,7 @@ function mapProduct(product: ApiProduct): Product {
     currentStock: product.quantity,
     stock: product.quantity,
     image: product.image_url,
+    isActive: product.is_active ?? true,
   }
 }
 
@@ -102,6 +94,7 @@ export default function POSDashboard() {
   const [products, setProducts] = useState<Product[]>([])
   const [isLoadingProducts, setIsLoadingProducts] = useState(true)
   const [productError, setProductError] = useState<string | null>(null)
+  const [showInactiveProducts, setShowInactiveProducts] = useState(false)
 
   const loadProducts = useCallback(async () => {
     const session = getAuthSession()
@@ -165,6 +158,8 @@ export default function POSDashboard() {
   const categories = useMemo(() => ['All', ...Array.from(new Set(products.map(product => product.category)))], [products])
 
   const filteredProducts = products.filter(product => {
+    if (!showInactiveProducts && !product.isActive) return false
+
     const matchesSearch =
       product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       product.code.toLowerCase().includes(searchQuery.toLowerCase())
@@ -285,6 +280,18 @@ export default function POSDashboard() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 h-11 bg-card border-border/60 focus:border-primary/40 rounded-xl text-sm transition-all duration-200 focus:ring-2 focus:ring-primary/10"
             />
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+              <Switch checked={showInactiveProducts} onCheckedChange={setShowInactiveProducts} />
+              <span>Show inactive products</span>
+            </label>
+            {!showInactiveProducts && (
+              <p className="text-xs text-muted-foreground">
+                Inactive products are hidden from the POS menu.
+              </p>
+            )}
           </div>
 
           <div className="flex gap-2 flex-wrap flex-shrink-0">

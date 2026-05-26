@@ -4,7 +4,8 @@ const { env } = require('../config/env')
 const { HttpError } = require('../utils/http-error')
 
 function normalizeRole(role) {
-  return String(role || '').trim().toLowerCase() === 'admin' ? 'admin' : 'cashier'
+  const value = String(role || '').trim().toLowerCase()
+  return value === 'admin' || value === 'superadmin' ? 'admin' : 'cashier'
 }
 
 function requireAuth(req, _res, next) {

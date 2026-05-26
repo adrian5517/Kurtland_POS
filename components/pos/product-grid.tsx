@@ -4,22 +4,23 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Plus } from 'lucide-react'
 
-interface Product {
+export interface POSProduct {
   id: string
   code: string
   name: string
   price: number
   category: string
   stock: number
-  minPrice?: number
-  maxPrice?: number
-  currentStock?: number
-  image?: string | null
+  minPrice: number
+  maxPrice: number
+  currentStock: number
+  image: string | null
+  isActive: boolean
 }
 
 interface POSProductGridProps {
-  products: Product[]
-  onProductClick: (product: Product) => void
+  products: POSProduct[]
+  onProductClick: (product: POSProduct) => void
 }
 
 export default function POSProductGrid({
@@ -33,7 +34,7 @@ export default function POSProductGrid({
     }
     acc[product.category].push(product)
     return acc
-  }, {} as Record<string, Product[]>)
+  }, {} as Record<string, POSProduct[]>)
 
   const categories = Object.keys(groupedProducts)
 

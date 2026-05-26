@@ -5,24 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { X, Search } from 'lucide-react'
-import POSProductGrid from './product-grid'
-
-interface Product {
-  id: string
-  code: string
-  name: string
-  price: number
-  category: string
-  stock: number
-  minPrice?: number
-  maxPrice?: number
-  currentStock?: number
-  image?: string | null
-}
+import POSProductGrid, { type POSProduct } from './product-grid'
 
 interface ProductSelectorProps {
-  products: Product[]
-  onProductClick: (product: Product) => void
+  products: POSProduct[]
+  onProductClick: (product: POSProduct) => void
   onClose: () => void
 }
 
