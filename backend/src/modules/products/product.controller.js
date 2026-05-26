@@ -4,7 +4,21 @@ const productController = {
   async index(_req, res, next) {
     try {
       const products = await productService.listProducts()
-      return res.json({ data: products })
+      const enrichedProducts = products.map((product) => {
+        const sellingPrice = Number(product.srp_price ?? product.srpPrice ?? 0)
+        const costPrice = Number(product.price ?? 0)
+        const profit = sellingPrice - costPrice
+        const profitMargin = sellingPrice > 0
+          ? Number(((profit / sellingPrice) * 100).toFixed(2))
+          : 0
+
+        return {
+          ...product,
+          profit,
+          profit_margin: profitMargin,
+        }
+      })
+      return res.json({ data: enrichedProducts })
     } catch (error) {
       next(error)
     }

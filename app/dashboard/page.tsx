@@ -90,8 +90,10 @@ type CartItem = {
  * ₱0.00 and the cashier can correct it rather than crashing.
  */
 function mapApiProduct(raw: ApiProduct): POSProduct {
-  const retailPrice = Number(raw.srp_price) || 0
-  const costPrice = Number(raw.price) || 0
+  const parsedSrp = Number(raw.srp_price)
+  const parsedCost = Number(raw.price)
+  const retailPrice = Number.isFinite(parsedSrp) && parsedSrp > 0 ? parsedSrp : Number.isFinite(parsedCost) ? parsedCost : 0
+  const costPrice = Number.isFinite(parsedCost) ? parsedCost : 0
 
   return {
     id: String(raw.id),

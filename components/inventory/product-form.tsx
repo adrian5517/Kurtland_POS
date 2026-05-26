@@ -308,12 +308,12 @@ export default function ProductForm({
     const finalCategory = formData.category
 
     if (!formData.name || !finalCategory || isNaN(minPriceNum) || minPriceNum <= 0) {
-      toast.error('Please fill in all required fields. Price must be positive.')
+      toast.error('Please fill in all required fields. Cost price must be positive.')
       return
     }
 
     if (minPriceNum > maxPriceNum) {
-      toast.error('Base price cannot be greater than SRP reference price.')
+      toast.error('Cost price cannot be greater than suggested retail price.')
       return
     }
 
@@ -491,7 +491,7 @@ export default function ProductForm({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 border-t border-primary/10 pt-4">
               <div className="space-y-2">
                 <Label htmlFor="minPrice" className="text-xs">
-                  Base Price (₱)
+                  Cost Price (₱)
                 </Label>
                 <Input
                   id="minPrice"
@@ -505,7 +505,7 @@ export default function ProductForm({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="maxPrice" className="text-xs">
-                  SRP Reference (₱)
+                  Suggested Retail Price (₱)
                 </Label>
                 <Input
                   id="maxPrice"

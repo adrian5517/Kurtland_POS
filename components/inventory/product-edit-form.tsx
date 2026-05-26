@@ -294,7 +294,7 @@ export default function ProductEditForm({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="minPrice" className="text-sm font-semibold">
-                  Min Price (₱)
+                  Cost Price (₱)
                 </Label>
                 <Input
                   id="minPrice"
@@ -307,7 +307,7 @@ export default function ProductEditForm({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="maxPrice" className="text-sm font-semibold">
-                  Max Price (₱)
+                  Suggested Retail Price (₱)
                 </Label>
                 <Input
                   id="maxPrice"

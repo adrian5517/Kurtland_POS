@@ -29,6 +29,8 @@ type ApiProduct = {
   srp_price: string
   quantity: number
   is_active: boolean
+  profit?: string | number
+  profit_margin?: string | number
   image_url: string | null
   image_public_id: string | null
 }
@@ -44,6 +46,8 @@ type InventoryItem = {
   srpPrice: number
   isActive: boolean
   currentStock: number
+  profit: number
+  profitMargin: number
   image: string | null
   imagePublicId: string | null
 }
@@ -60,6 +64,8 @@ const PAGE_SIZE_OPTIONS = [10, 20, 50] as const
 function mapProduct(product: ApiProduct): InventoryItem {
   const price = Number(product.price) || 0
   const srpPrice = Number(product.srp_price) || 0
+  const profit = Number(product.profit) || srpPrice - price
+  const profitMargin = Number(product.profit_margin) || (srpPrice > 0 ? (profit / srpPrice) * 100 : 0)
   return {
     id: String(product.id),
     code: product.sku || '',
@@ -71,6 +77,8 @@ function mapProduct(product: ApiProduct): InventoryItem {
     srpPrice: srpPrice,
     isActive: product.is_active ?? true,
     currentStock: product.quantity || 0,
+    profit,
+    profitMargin,
     image: product.image_url,
     imagePublicId: product.image_public_id,
   }
@@ -678,6 +686,12 @@ export default function InventoryPage() {
                   <th className="px-5 py-3.5 text-right">
                     <SortButton field="minPrice" label="Retail Price" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                   </th>
+                  <th className="px-5 py-3.5 text-right text-right text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Profit
+                  </th>
+                  <th className="px-5 py-3.5 text-right text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Margin
+                  </th>
                   <th className="px-5 py-3.5 text-right text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                     Alert At
                   </th>
@@ -694,7 +708,7 @@ export default function InventoryPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i}>
-                      {Array.from({ length: 9 }).map((_, j) => (
+                      {Array.from({ length: 11 }).map((_, j) => (
                         <td key={j} className="px-5 py-4">
                           <div className={`h-4 rounded-md bg-muted animate-pulse ${j === 1 ? 'w-36' : j === 0 ? 'w-20' : 'w-16'}`} style={{ animationDelay: `${i * 60}ms` }} />
                         </td>
@@ -703,7 +717,7 @@ export default function InventoryPage() {
                   ))
                 ) : paginatedInventory.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-5 py-16 text-center text-muted-foreground">
+                    <td colSpan={11} className="px-5 py-16 text-center text-muted-foreground">
                       <div className="flex flex-col items-center gap-3">
                         <div className="h-14 w-14 rounded-2xl bg-muted/60 flex items-center justify-center">
                           <Package className="h-7 w-7 text-muted-foreground/40" />
@@ -790,6 +804,22 @@ export default function InventoryPage() {
                         {/* Retail Price */}
                         <td className="px-5 py-3.5 text-left font-mono font-bold text-foreground text-sm">
                           ₱{item.minPrice.toFixed(2)}
+                        </td>
+
+                        {/* Profit */}
+                        <td className="px-5 py-3.5 text-right font-mono font-semibold text-foreground">
+                          ₱{item.profit.toFixed(2)}
+                        </td>
+
+                        {/* Margin */}
+                        <td className="px-5 py-3.5 text-right">
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                            item.profitMargin >= 20 ? 'bg-emerald-100 text-emerald-700' :
+                            item.profitMargin >= 10 ? 'bg-amber-100 text-amber-700' :
+                            'bg-destructive/10 text-destructive'
+                          }`}>
+                            {item.profitMargin.toFixed(1)}%
+                          </span>
                         </td>
 
                         {/* Alert At */}
