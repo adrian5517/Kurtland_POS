@@ -54,7 +54,6 @@ export default function POSProductGrid({
                 <Card
                   key={product.id}
                   className="group flex cursor-pointer flex-col overflow-hidden rounded-3xl border border-primary/15 bg-card/95 shadow-[0_1px_1px_rgba(15,23,42,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-[0_18px_40px_rgba(15,23,42,0.08)]"
-                  onClick={() => onProductClick(product)}
                 >
                   {/* Product Image */}
                   {product.image ? (

@@ -258,19 +258,20 @@ function useCart(products: POSProduct[]) {
         return
       }
 
+      // Determine the toast to show OUTSIDE setCart so it fires exactly once.
+      // (React 18 Strict Mode invokes setState updaters twice in dev, which
+      //  would duplicate any toast called inside the updater.)
+      let notify: (() => void) | null = null
+
       setCart((prev) => {
         const existing = prev.find((item) => item.id === product.id)
 
         if (existing) {
-          // Guard: already at max available stock
           if (existing.quantity >= product.currentStock) {
-            // toast inside setState is a side-effect — safe in React 18
-            // but we schedule it via setTimeout to keep the setter pure
-            setTimeout(() => toast.warning(`Only ${product.currentStock} units available`), 0)
+            notify = () => toast.warning(`Only ${product.currentStock} units available`)
             return prev
           }
-
-          setTimeout(() => toast.success(`${product.name} qty updated`), 0)
+          notify = () => toast.success(`${product.name} qty updated`)
           return prev.map((item) =>
             item.id === product.id
               ? {
@@ -282,7 +283,7 @@ function useCart(products: POSProduct[]) {
           )
         }
 
-        setTimeout(() => toast.success(`${product.name} added`), 0)
+        notify = () => toast.success(`${product.name} added`)
         return [
           ...prev,
           {
@@ -296,6 +297,9 @@ function useCart(products: POSProduct[]) {
           },
         ]
       })
+
+      // Call once after setCart — never inside the updater
+      notify?.()
     },
     [],
   )
@@ -312,25 +316,25 @@ function useCart(products: POSProduct[]) {
         return
       }
 
+      let notify: (() => void) | null = null
+
       setCart((prev) =>
         prev.map((item) => {
           if (item.id !== productId) return item
 
-          // Respect live stock when updating quantity
           const liveProduct = getProduct(productId)
           const maxQty = liveProduct?.currentStock ?? item.maxStock
           const clampedQty = Math.min(quantity, maxQty)
 
           if (clampedQty < quantity) {
-            setTimeout(
-              () => toast.warning(`Only ${maxQty} units available for ${item.name}`),
-              0,
-            )
+            notify = () => toast.warning(`Only ${maxQty} units available for ${item.name}`)
           }
 
           return { ...item, quantity: clampedQty, subtotal: clampedQty * item.price }
         }),
       )
+
+      notify?.()
     },
     [removeFromCart, getProduct],
   )
