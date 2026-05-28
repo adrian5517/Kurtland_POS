@@ -45,7 +45,7 @@ const corsOrigins = env.corsOrigin.split(',').map(o => o.trim())
 app.use(cors({
   origin: corsOrigins,
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   maxAge: 86400, // 24 hours
 }))

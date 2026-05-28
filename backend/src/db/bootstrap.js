@@ -17,6 +17,11 @@ const STARTER_PRODUCTS = [
 ]
 
 async function bootstrapDatabase() {
+  // Ensure is_active column exists for databases created before this migration
+  await db.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true
+  `).catch(() => { /* table may not exist yet, created below */ })
+
   await db.query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -24,6 +29,7 @@ async function bootstrapDatabase() {
       password_hash TEXT NOT NULL,
       name TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'cashier',
+      is_active BOOLEAN NOT NULL DEFAULT true,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
