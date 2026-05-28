@@ -216,6 +216,48 @@ const productRepository = {
     )
     return result.rows
   },
+
+  // 10. Get comprehensive cashier analytics with product details, costs, and profit potential
+  async getCashierAnalytics() {
+    const result = await db.query(
+      `SELECT 
+         u.id,
+         u.email,
+         COUNT(DISTINCT pca.product_id) as total_products,
+         COALESCE(SUM(p.price::numeric * p.quantity), 0) as inventory_cost,
+         COALESCE(SUM((p.srp_price::numeric - p.price::numeric) * p.quantity), 0) as profit_potential,
+         COALESCE(SUM(CASE WHEN p.quantity < p.min_stock THEN 1 ELSE 0 END), 0) as stock_alerts_count,
+         JSON_AGG(
+           CASE WHEN p.quantity < p.min_stock THEN
+             JSON_BUILD_OBJECT(
+               'product_id', p.id,
+               'product_name', p.name,
+               'quantity', p.quantity,
+               'min_stock', p.min_stock
+             )
+           END
+         ) FILTER (WHERE p.quantity < p.min_stock) as stock_alerts,
+         JSON_AGG(
+           JSON_BUILD_OBJECT(
+             'id', p.id,
+             'name', p.name,
+             'sku', p.sku,
+             'price', p.price::text,
+             'srp_price', p.srp_price::text,
+             'quantity', p.quantity,
+             'min_stock', p.min_stock,
+             'profit_per_unit', (p.srp_price::numeric - p.price::numeric)::text
+           )
+         ) FILTER (WHERE pca.product_id IS NOT NULL) as products
+       FROM users u
+       LEFT JOIN product_cashier_assignments pca ON u.id = pca.cashier_id
+       LEFT JOIN products p ON pca.product_id = p.id AND p.is_deleted = false
+       WHERE u.role = 'cashier'
+       GROUP BY u.id, u.email
+       ORDER BY u.email ASC`,
+    )
+    return result.rows
+  },
 }
 
 module.exports = { productRepository }

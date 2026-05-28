@@ -19,10 +19,15 @@ const finalVerifyToken = (authMiddleware && authMiddleware.verifyToken)
 
 // 3. Fallback controller verification
 const salesHandler = (reportController && reportController.getSalesReport)
-  ? reportController.getSalesReport
+  ? reportController.getSalesReport.bind(reportController)
   : (req, res) => res.status(500).json({ error: "getSalesReport controller method is missing" });
 
-// 4. Bind route
+const cashierPerfHandler = (reportController && reportController.getCashierPerformance)
+  ? reportController.getCashierPerformance.bind(reportController)
+  : (req, res) => res.status(500).json({ error: "getCashierPerformance controller method is missing" });
+
+// 4. Bind routes
 reportRouter.get('/sales', finalVerifyToken, salesHandler);
+reportRouter.get('/cashier-performance', finalVerifyToken, cashierPerfHandler);
 
 module.exports = { reportRouter };

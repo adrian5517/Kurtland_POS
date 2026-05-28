@@ -137,8 +137,8 @@ const orderService = {
       client.release()
     }
   },
-  async getOrderLogs() {
-    return await orderRepository.findAllLogs()
+  async getOrderLogs(cashierId = null) {
+    return await orderRepository.findAllLogs(cashierId)
   }
 }
 

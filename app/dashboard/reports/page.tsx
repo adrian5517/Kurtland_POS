@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -14,7 +15,8 @@ import {
   RefreshCw, CheckCircle2, History, ChevronDown, ChevronUp, Package, Receipt,
   ChevronLeft, ChevronRight, Filter, X, Clock, CheckCircle, PlusCircle,
   MinusCircle, ShoppingBag, CreditCard, Banknote, Hash, Info, Maximize2,
-  Minimize2, LayoutTemplate, Columns, SquareArrowOutUpRight
+  Minimize2, LayoutTemplate, Columns, SquareArrowOutUpRight, Users, UserCircle,
+  BarChart3, Trophy, ArrowRight
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { apiFetch, apiHeaders } from '@/lib/api'
@@ -43,6 +45,8 @@ interface OrderLog {
   action: 'ORDER_CREATED' | 'STOCK_DECREMENTED' | 'CHECKOUT_COMPLETED' | string
   note: string
   created_at: string
+  cashier_id?: number
+  cashier_email?: string
 }
 
 interface GroupedOrder {
@@ -55,6 +59,21 @@ interface GroupedOrder {
   change: string | null
   items: { name: string; quantity: string }[]
   allNotes: { action: string; note: string; timestamp: string }[]
+  cashierId: number | null
+  cashierEmail: string | null
+}
+
+interface CashierItem {
+  id: number
+  email: string
+}
+
+interface CashierPerformanceRow {
+  cashier_id: number
+  cashier_email: string
+  revenue: number
+  transactions: number
+  avg_order_value: number
 }
 
 interface ReportPayloadData {
@@ -182,6 +201,8 @@ function groupLogsByOrder(logs: OrderLog[]): GroupedOrder[] {
         note: l.note,
         timestamp: l.created_at,
       })),
+      cashierId: sorted[0]?.cashier_id ?? null,
+      cashierEmail: sorted[0]?.cashier_email ?? null,
     })
   })
 
@@ -503,12 +524,16 @@ function OrderActivityLog({
   allGroupedOrders,
   isLogsLoading,
   onRefresh,
+  activeFilterLabel,
+  inline,
 }: {
   isOpen: boolean
   onClose: () => void
   allGroupedOrders: GroupedOrder[]
   isLogsLoading: boolean
   onRefresh: () => void
+  activeFilterLabel?: string
+  inline?: boolean
 }) {
   const [isCentered, setIsCentered] = useState(false)
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null)
@@ -595,39 +620,43 @@ function OrderActivityLog({
           >
             <RefreshCw className={`h-4 w-4 ${isLogsLoading ? 'animate-spin' : ''}`} />
           </Button>
-          {/* Center/Expand toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsCentered(p => !p)}
-            className={`gap-1.5 rounded-xl text-xs font-semibold h-8 px-3 transition-all ${
-              isCentered
-                ? 'bg-amber-500/10 border-amber-500/30 text-amber-700 hover:bg-amber-500/20'
-                : 'hover:bg-muted'
-            }`}
-            title={isCentered ? 'Switch to side panel view' : 'Switch to centered modal view'}
-          >
-            {isCentered
-              ? <><Columns className="h-3.5 w-3.5" /> Side Panel</>
-              : <><Maximize2 className="h-3.5 w-3.5" /> Center View</>
-            }
-          </Button>
-          {/* Close */}
-          <Button
-            variant="ghost" size="icon"
-            onClick={onClose}
-            className="h-8 w-8 rounded-xl hover:bg-destructive/10 hover:text-destructive"
-            title="Close"
-          >
-            <X className="h-4 w-4" />
-          </Button>
+          {/* Center/Expand toggle — hidden in inline mode */}
+          {!inline && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsCentered(p => !p)}
+              className={`gap-1.5 rounded-xl text-xs font-semibold h-8 px-3 transition-all ${
+                isCentered
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-700 hover:bg-amber-500/20'
+                  : 'hover:bg-muted'
+              }`}
+              title={isCentered ? 'Switch to side panel view' : 'Switch to centered modal view'}
+            >
+              {isCentered
+                ? <><Columns className="h-3.5 w-3.5" /> Side Panel</>
+                : <><Maximize2 className="h-3.5 w-3.5" /> Center View</>
+              }
+            </Button>
+          )}
+          {/* Close — hidden in inline mode */}
+          {!inline && (
+            <Button
+              variant="ghost" size="icon"
+              onClick={onClose}
+              className="h-8 w-8 rounded-xl hover:bg-destructive/10 hover:text-destructive"
+              title="Close"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Quick stats bar */}
-      <div className="flex items-center gap-3 px-5 py-2.5 bg-muted/30 border-b shrink-0">
+      <div className="flex items-center gap-3 px-5 py-2.5 bg-muted/30 border-b shrink-0 flex-wrap">
         <span className="text-[11px] text-muted-foreground font-medium">Quick stats:</span>
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap flex-1">
           <span className="text-[11px] font-bold bg-background border rounded-lg px-2 py-0.5 text-foreground">
             {allGroupedOrders.length} total
           </span>
@@ -641,6 +670,12 @@ function OrderActivityLog({
             + {stats.pending} pending
           </span>
         </div>
+        {activeFilterLabel && (
+          <div className="flex items-center gap-1.5 bg-primary/10 border border-primary/20 rounded-lg px-2.5 py-1 shrink-0">
+            <UserCircle className="h-3 w-3 text-primary" />
+            <span className="text-[11px] font-bold text-primary">{activeFilterLabel}</span>
+          </div>
+        )}
       </div>
 
       {/* Filters */}
@@ -776,6 +811,12 @@ function OrderActivityLog({
                         <span className="text-[10px] text-muted-foreground bg-muted rounded-md px-1.5 py-0.5 border">
                           {order.logs.length} event{order.logs.length !== 1 ? 's' : ''}
                         </span>
+                        {order.cashierEmail && (
+                          <span className="text-[10px] font-semibold text-primary/80 bg-primary/5 border border-primary/15 rounded-md px-1.5 py-0.5 flex items-center gap-1">
+                            <UserCircle className="h-2.5 w-2.5" />
+                            {order.cashierEmail.split('@')[0]}
+                          </span>
+                        )}
                       </div>
                       {order.items.length > 0 && (
                         <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
@@ -920,6 +961,15 @@ function OrderActivityLog({
     </div>
   )
 
+  // Inline mode — render directly without any drawer or modal wrapper
+  if (inline) {
+    return (
+      <div className="rounded-2xl border bg-card overflow-hidden" style={{ minHeight: '600px' }}>
+        <PanelContent />
+      </div>
+    )
+  }
+
   // Render as side drawer or centered modal
   if (isCentered) {
     return (
@@ -958,11 +1008,28 @@ export default function ReportsPage() {
   const [errorContext, setErrorContext] = useState<string | null>(null)
   const [isExporting, setIsExporting] = useState(false)
 
-  const [isLogOpen, setIsLogOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<'overview' | 'performance' | 'orders'>('overview')
+
+  // ── Cashier filter state ─────────────────────────────────────────────────
+  const [cashiers, setCashiers] = useState<CashierItem[]>([])
+  const [selectedCashierId, setSelectedCashierId] = useState<number | null>(null)
+  const [cashierPerformance, setCashierPerformance] = useState<CashierPerformanceRow[]>([])
+  const [isCashierPerfLoading, setIsCashierPerfLoading] = useState(false)
+
+  const selectedCashier = useMemo(
+    () => cashiers.find(c => c.id === selectedCashierId) ?? null,
+    [cashiers, selectedCashierId]
+  )
+
+  const session = useMemo(() => {
+    if (typeof window === 'undefined') return null
+    return getAuthSession()
+  }, [])
+  const isAdmin = session?.user?.role === 'admin'
 
   const loadReportData = useCallback(async () => {
-    const session = getAuthSession()
-    if (!session?.token) {
+    const s = getAuthSession()
+    if (!s?.token) {
       setErrorContext('You are not logged in. Please sign in to view reports.')
       setIsLoading(false)
       return
@@ -970,9 +1037,10 @@ export default function ReportsPage() {
     setIsLoading(true)
     setErrorContext(null)
     try {
-      const res = await apiFetch(`/api/reports/sales?range=${timeRange}`, {
+      const cashierParam = selectedCashierId ? `&cashier_id=${selectedCashierId}` : ''
+      const res = await apiFetch(`/api/reports/sales?range=${timeRange}${cashierParam}`, {
         method: 'GET',
-        headers: apiHeaders(session.token),
+        headers: apiHeaders(s.token),
       })
       const payload = await res.json()
       if (!res.ok) throw new Error(payload?.message || 'Could not load sales data.')
@@ -983,14 +1051,15 @@ export default function ReportsPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [timeRange])
+  }, [timeRange, selectedCashierId])
 
   const loadOrderLogs = useCallback(async () => {
-    const session = getAuthSession()
-    if (!session?.token) return
+    const s = getAuthSession()
+    if (!s?.token) return
     setIsLogsLoading(true)
     try {
-      const res = await apiFetch('/api/orders/logs', { method: 'GET', headers: apiHeaders(session.token) })
+      const cashierParam = selectedCashierId ? `?cashier_id=${selectedCashierId}` : ''
+      const res = await apiFetch(`/api/orders/logs${cashierParam}`, { method: 'GET', headers: apiHeaders(s.token) })
       const payload = await res.json()
       if (res.ok) setLogsData(payload?.data ?? [])
     } catch {
@@ -998,12 +1067,54 @@ export default function ReportsPage() {
     } finally {
       setIsLogsLoading(false)
     }
+  }, [selectedCashierId])
+
+  const loadCashiers = useCallback(async () => {
+    const s = getAuthSession()
+    if (!s?.token || s.user?.role !== 'admin') return
+    try {
+      const res = await apiFetch('/api/products/cashiers/list', { method: 'GET', headers: apiHeaders(s.token) })
+      if (res.ok) {
+        const payload = await res.json()
+        setCashiers(payload?.data ?? [])
+      }
+    } catch {
+      // Non-critical — cashier filter just won't populate
+    }
   }, [])
+
+  const loadCashierPerformance = useCallback(async () => {
+    const s = getAuthSession()
+    if (!s?.token || s.user?.role !== 'admin') return
+    setIsCashierPerfLoading(true)
+    try {
+      const res = await apiFetch(`/api/reports/cashier-performance?range=${timeRange}`, {
+        method: 'GET',
+        headers: apiHeaders(s.token),
+      })
+      if (res.ok) {
+        const payload = await res.json()
+        setCashierPerformance(payload?.data ?? [])
+      }
+    } catch {
+      // Non-critical — summary just won't show
+    } finally {
+      setIsCashierPerfLoading(false)
+    }
+  }, [timeRange])
 
   useEffect(() => {
     void loadReportData()
     void loadOrderLogs()
   }, [loadReportData, loadOrderLogs])
+
+  useEffect(() => {
+    void loadCashiers()
+  }, [loadCashiers])
+
+  useEffect(() => {
+    if (isAdmin) void loadCashierPerformance()
+  }, [loadCashierPerformance, isAdmin])
 
   const computedMetrics = useMemo(() => {
     const trends = reportData?.salesTrend ?? []
@@ -1017,6 +1128,16 @@ export default function ReportsPage() {
   }, [reportData])
 
   const allGroupedOrders = useMemo(() => groupLogsByOrder(logsData), [logsData])
+
+  const timeRangeLabel = useMemo(() => ({
+    day: 'Today', week: 'This Week', month: 'This Month', '3months': 'Last 3 Months',
+  } as const)[timeRange], [timeRange])
+
+  const refreshAll = useCallback(() => {
+    void loadReportData()
+    void loadOrderLogs()
+    if (isAdmin) void loadCashierPerformance()
+  }, [loadReportData, loadOrderLogs, loadCashierPerformance, isAdmin])
 
   const handleExportData = async () => {
     if (!reportData || reportData.salesTrend.length === 0) {
@@ -1033,7 +1154,8 @@ export default function ReportsPage() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `Sales_Report_${timeRange}_${new Date().toISOString().split('T')[0]}.csv`
+      const cashierSuffix = selectedCashier ? `_${selectedCashier.email.split('@')[0]}` : ''
+      a.download = `Sales_Report_${timeRange}${cashierSuffix}_${new Date().toISOString().split('T')[0]}.csv`
       document.body.appendChild(a); a.click(); document.body.removeChild(a)
       URL.revokeObjectURL(url)
       toast.success('Report exported successfully!')
@@ -1048,77 +1170,120 @@ export default function ReportsPage() {
   const overall = reportData?.summaryMetrics?.overallGrowthPercentage ?? 0
 
   return (
-    <div className="w-full max-w-none space-y-6 md:space-y-8 animate-in fade-in duration-300">
+    <div className="w-full max-w-none animate-in fade-in duration-300">
 
-      {/* Page Header */}
-      <div className="flex w-full flex-col gap-4 lg:flex-row lg:items-center lg:justify-between border-b pb-5">
-        <div className="space-y-1">
+      {/* ── Page Header ────────────────────────────────────────────────── */}
+      <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-start sm:justify-between border-b pb-5 mb-6">
+        <div className="space-y-0.5">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Kurtland POS</p>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Sales & Analytics</h1>
           <p className="text-sm text-muted-foreground">
-            View your revenue, best-selling products, and full order history in one place.
+            {selectedCashier
+              ? `Viewing: ${selectedCashier.email} · ${timeRangeLabel}`
+              : `All cashiers · ${timeRangeLabel}`}
           </p>
         </div>
-
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
-          {/* Order Activity Log Button */}
+        <div className="flex items-center gap-2 shrink-0">
           <Button
-            variant="outline"
-            onClick={() => setIsLogOpen(true)}
-            className="w-full sm:w-auto gap-2 rounded-xl px-4 border-amber-600/30 bg-amber-500/5 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/20 transition-all font-medium"
+            variant="outline" size="sm"
+            onClick={refreshAll}
+            disabled={isLoading || isLogsLoading}
+            className="gap-2 rounded-xl h-9 px-4"
           >
-            <History className="h-4 w-4" />
-            Order Activity Log
-            {allGroupedOrders.length > 0 && (
-              <Badge variant="secondary" className="ml-1 px-1.5 py-0 bg-amber-500/20 text-amber-800 dark:text-amber-300 rounded-md text-[10px]">
-                {allGroupedOrders.length} orders
-              </Badge>
-            )}
+            <RefreshCw className={`h-4 w-4 ${(isLoading || isLogsLoading) ? 'animate-spin' : ''}`} />
+            Refresh
           </Button>
-
-          {/* Export Button */}
           <Button
             onClick={handleExportData}
             disabled={isLoading || !!errorContext || isExporting}
-            className="w-full sm:w-auto gap-2 rounded-xl bg-primary px-5 hover:bg-primary/90 transition-all shadow-sm"
+            size="sm"
+            className="gap-2 rounded-xl h-9 px-4"
           >
             {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            {isExporting ? 'Exporting…' : 'Export to CSV'}
+            {isExporting ? 'Exporting…' : 'Export CSV'}
           </Button>
         </div>
       </div>
 
-      {/* Time Range Tabs */}
-      <div className="flex w-full items-center justify-between flex-wrap gap-3">
-        <div className="flex flex-wrap gap-1.5 bg-muted/60 border p-1 rounded-xl shadow-inner">
-          {([
-            { value: 'day', label: 'Today' },
-            { value: 'week', label: 'This Week' },
-            { value: 'month', label: 'This Month' },
-            { value: '3months', label: 'Last 3 Months' },
-          ] as const).map(({ value, label }) => (
-            <Button
-              key={value}
-              variant={timeRange === value ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setTimeRange(value)}
-              className={`rounded-lg text-xs px-4 font-semibold transition-all ${
-                timeRange === value ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {label}
-            </Button>
-          ))}
+      {/* ── Unified Filter Bar ──────────────────────────────────────────── */}
+      <div className="flex flex-col gap-3 rounded-2xl border bg-card px-5 py-4 mb-6 shadow-sm">
+        {/* Row 1: Time Period */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider w-14 shrink-0">Period</span>
+          <div className="flex flex-wrap gap-1.5 bg-muted/60 border p-1 rounded-xl shadow-inner">
+            {([
+              { value: 'day', label: 'Today' },
+              { value: 'week', label: 'This Week' },
+              { value: 'month', label: 'This Month' },
+              { value: '3months', label: 'Last 3 Months' },
+            ] as const).map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => setTimeRange(value)}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${
+                  timeRange === value
+                    ? 'bg-background text-foreground shadow-sm border'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-background/60'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground bg-muted/30 px-2.5 py-1.5 rounded-lg border">
+            <Calendar className="h-3 w-3 text-primary" />
+            <span>Live data</span>
+            {(isLoading || isLogsLoading) && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground bg-muted/30 px-3 py-1.5 rounded-lg border">
-          <Calendar className="h-3.5 w-3.5 text-primary" />
-          <span>Live data from your store</span>
-        </div>
+
+        {/* Row 2: Cashier Filter (admin only) */}
+        {isAdmin && (cashiers.length > 0 || isCashierPerfLoading) && (
+          <div className="flex items-center gap-3 flex-wrap pt-2 border-t">
+            <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider w-14 shrink-0 flex items-center gap-1">
+              <Users className="h-3 w-3" /> Cashier
+            </span>
+            <div className="flex flex-wrap gap-1.5 flex-1">
+              <button
+                onClick={() => setSelectedCashierId(null)}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-xl border transition-all ${
+                  selectedCashierId === null
+                    ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                    : 'bg-background text-muted-foreground border-border hover:bg-muted'
+                }`}
+              >
+                All
+              </button>
+              {cashiers.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => setSelectedCashierId(c.id)}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-xl border transition-all flex items-center gap-1.5 ${
+                    selectedCashierId === c.id
+                      ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                      : 'bg-background text-muted-foreground border-border hover:bg-muted'
+                  }`}
+                >
+                  <UserCircle className="h-3 w-3" />
+                  {c.email.split('@')[0]}
+                </button>
+              ))}
+            </div>
+            {selectedCashierId && (
+              <button
+                onClick={() => setSelectedCashierId(null)}
+                className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1 shrink-0"
+              >
+                <X className="h-3 w-3" /> Clear
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Error Banner */}
+      {/* ── Error Banner ───────────────────────────────────────────────── */}
       {errorContext && (
-        <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive flex items-center gap-3">
+        <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive flex items-center gap-3 mb-6">
           <AlertCircle className="h-5 w-5 shrink-0" />
           <div>
             <p className="font-semibold">Something went wrong</p>
@@ -1130,167 +1295,305 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* KPI Cards */}
-      <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          title="Total Revenue" icon={DollarSign} loading={isLoading}
-          value={`₱${computedMetrics.totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
-          sub={<span className={`font-semibold ${growth >= 0 ? 'text-green-600' : 'text-rose-600'}`}>
-            {growth >= 0 ? '+' : ''}{growth}% vs previous period
-          </span>}
-        />
-        <StatCard
-          title="Total Transactions" icon={ShoppingCart} loading={isLoading}
-          value={computedMetrics.totalTransactions.toLocaleString()}
-          sub={<>Average order: <span className="font-bold text-foreground">₱{computedMetrics.avgTransaction.toLocaleString()}</span></>}
-        />
-        <StatCard
-          title="Best Sales Day" icon={TrendingUp} loading={isLoading}
-          value={`₱${computedMetrics.bestDay.sales.toLocaleString()}`}
-          sub={<>Date: <span className="font-bold text-primary">{computedMetrics.bestDay.date}</span></>}
-        />
-        <StatCard
-          title="Overall Growth" icon={Percent} loading={isLoading}
-          value={`${overall}%`}
-          sub={<span className="text-green-600 font-semibold flex items-center gap-1">
-            <CheckCircle2 className="h-3 w-3" /> Business performing well
-          </span>}
-        />
-      </div>
-
-      {/* Charts */}
-      <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card className="border rounded-2xl col-span-1 lg:col-span-2 shadow-sm bg-card overflow-hidden">
-          <CardHeader className="border-b bg-muted/20">
-            <CardTitle className="text-base font-bold">Revenue Over Time</CardTitle>
-            <CardDescription>Daily sales totals for the selected period</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-6">
-            {isLoading ? <ChartSkeleton /> : (!reportData || reportData.salesTrend.length === 0) ? (
-              <EmptyChart message="No sales data for this period." />
-            ) : (
-              <ResponsiveContainer width="100%" height={320}>
-                <LineChart data={reportData.salesTrend} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                  <XAxis dataKey="date" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={v => `₱${v}`} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: 'var(--background)', borderColor: 'var(--border)', borderRadius: '12px' }}
-                    formatter={(v: any) => [`₱${Number(v).toLocaleString()}`, 'Revenue']}
-                  />
-                  <Legend />
-                  <Line type="monotone" dataKey="sales" stroke="#b45309" strokeWidth={3} name="Daily Revenue" dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border rounded-2xl shadow-sm bg-card overflow-hidden">
-          <CardHeader className="border-b bg-muted/20">
-            <CardTitle className="text-base font-bold">Sales by Category</CardTitle>
-            <CardDescription>Which product categories are selling the most</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-6 flex items-center justify-center">
-            {isLoading ? <ChartSkeleton /> : (!reportData || reportData.categoryDistribution.length === 0) ? (
-              <EmptyChart message="No category data available." />
-            ) : (
-              <ResponsiveContainer width="100%" height={320}>
-                <PieChart>
-                  <Pie
-                    data={reportData.categoryDistribution}
-                    cx="50%" cy="50%" labelLine outerRadius={95}
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                    dataKey="value"
-                  >
-                    {reportData.categoryDistribution.map((_, i) => (
-                      <Cell key={i} fill={PALETTE_COLORS[i % PALETTE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={v => `₱${Number(v).toLocaleString()}`} />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border rounded-2xl shadow-sm bg-card overflow-hidden">
-          <CardHeader className="border-b bg-muted/20">
-            <CardTitle className="text-base font-bold">Daily Transaction Count</CardTitle>
-            <CardDescription>How many orders were processed each day</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-6">
-            {isLoading ? <ChartSkeleton /> : (!reportData || reportData.salesTrend.length === 0) ? (
-              <EmptyChart message="No transaction data available." />
-            ) : (
-              <ResponsiveContainer width="100%" height={320}>
-                <BarChart data={reportData.salesTrend}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                  <XAxis dataKey="date" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={{ backgroundColor: 'var(--background)', borderColor: 'var(--border)', borderRadius: '12px' }} />
-                  <Bar dataKey="transactions" fill="#ea580c" name="Orders" radius={[6, 6, 0, 0]} maxBarSize={45} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Top Products */}
-      <Card className="border rounded-2xl shadow-sm bg-card overflow-hidden">
-        <CardHeader className="border-b bg-muted/20">
-          <CardTitle className="text-base font-bold">Top Selling Products</CardTitle>
-          <CardDescription>Best performers ranked by total revenue generated</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="p-12 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></div>
-          ) : (!reportData || reportData.topProducts.length === 0) ? (
-            <div className="p-12 text-center text-xs text-muted-foreground">No products sold in this period yet.</div>
-          ) : (
-            <div className="divide-y divide-border">
-              {reportData.topProducts.map((product, idx) => (
-                <div key={idx} className="flex items-center justify-between p-4 px-6 hover:bg-muted/20 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <span className={`inline-flex h-7 w-7 items-center justify-center text-xs font-black rounded-lg border ${
-                      idx === 0 ? 'bg-amber-500/20 text-amber-700 border-amber-500/30' :
-                      idx === 1 ? 'bg-slate-500/10 text-slate-600 border-slate-500/20' :
-                      idx === 2 ? 'bg-orange-500/10 text-orange-700 border-orange-500/20' :
-                      'bg-primary/10 text-primary border-primary/20'
-                    }`}>{idx + 1}</span>
-                    <div>
-                      <p className="font-bold text-sm text-foreground">{product.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {product.sales.toLocaleString()} {product.sales === 1 ? 'unit' : 'units'} sold
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-extrabold text-sm text-primary">
-                      ₱{product.revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </p>
-                    <p className="text-[10px] font-bold text-muted-foreground bg-muted border px-2 py-0.5 rounded-md mt-0.5">
-                      {computedMetrics.totalRevenue > 0
-                        ? ((product.revenue / computedMetrics.totalRevenue) * 100).toFixed(1)
-                        : 0}% of total revenue
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
+      {/* ── Main Navigation Tabs ─────────────────────────────────────────── */}
+      <Tabs value={activeTab} onValueChange={v => setActiveTab(v as typeof activeTab)}>
+        <TabsList className="w-full sm:w-auto mb-6 h-auto p-1 gap-1 rounded-2xl">
+          <TabsTrigger value="overview" className="gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold data-[state=active]:shadow-sm">
+            <BarChart3 className="h-3.5 w-3.5" />
+            Overview
+          </TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger value="performance" className="gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold data-[state=active]:shadow-sm">
+              <Trophy className="h-3.5 w-3.5" />
+              Cashier Performance
+              {cashierPerformance.length > 0 && (
+                <span className="ml-1 text-[10px] font-bold bg-amber-500/20 text-amber-700 rounded-md px-1.5 py-0.5">
+                  {cashierPerformance.length}
+                </span>
+              )}
+            </TabsTrigger>
           )}
-        </CardContent>
-      </Card>
+          <TabsTrigger value="orders" className="gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold data-[state=active]:shadow-sm">
+            <History className="h-3.5 w-3.5" />
+            Order History
+            {allGroupedOrders.length > 0 && (
+              <span className="ml-1 text-[10px] font-bold bg-background border rounded-md px-1.5 py-0.5 text-foreground">
+                {allGroupedOrders.length}
+              </span>
+            )}
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Order Activity Log Panel */}
-      <OrderActivityLog
-        isOpen={isLogOpen}
-        onClose={() => setIsLogOpen(false)}
-        allGroupedOrders={allGroupedOrders}
-        isLogsLoading={isLogsLoading}
-        onRefresh={loadOrderLogs}
-      />
+        {/* ── Overview Tab ──────────────────────────────────────────────── */}
+        <TabsContent value="overview" className="space-y-6 mt-0 focus-visible:ring-0 focus-visible:outline-none">
+
+          {/* KPI Cards */}
+          <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              title={selectedCashier ? `${selectedCashier.email.split('@')[0]}'s Revenue` : 'Total Revenue'}
+              icon={DollarSign} loading={isLoading}
+              value={`₱${computedMetrics.totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+              sub={<span className={`font-semibold ${growth >= 0 ? 'text-green-600' : 'text-rose-600'}`}>
+                {growth >= 0 ? '+' : ''}{growth}% vs previous period
+              </span>}
+            />
+            <StatCard
+              title={selectedCashier ? `${selectedCashier.email.split('@')[0]}'s Transactions` : 'Total Transactions'}
+              icon={ShoppingCart} loading={isLoading}
+              value={computedMetrics.totalTransactions.toLocaleString()}
+              sub={<>Average order: <span className="font-bold text-foreground">₱{computedMetrics.avgTransaction.toLocaleString()}</span></>}
+            />
+            <StatCard
+              title="Best Sales Day" icon={TrendingUp} loading={isLoading}
+              value={`₱${computedMetrics.bestDay.sales.toLocaleString()}`}
+              sub={<>Date: <span className="font-bold text-primary">{computedMetrics.bestDay.date}</span></>}
+            />
+            <StatCard
+              title="Overall Growth" icon={Percent} loading={isLoading}
+              value={`${overall}%`}
+              sub={<span className="text-green-600 font-semibold flex items-center gap-1">
+                <CheckCircle2 className="h-3 w-3" /> Business performing well
+              </span>}
+            />
+          </div>
+
+          {/* Charts */}
+          <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-2">
+            <Card className="border rounded-2xl col-span-1 lg:col-span-2 shadow-sm bg-card overflow-hidden">
+              <CardHeader className="border-b bg-muted/20">
+                <CardTitle className="text-base font-bold">Revenue Over Time</CardTitle>
+                <CardDescription>
+                  {selectedCashier ? `${selectedCashier.email}'s sales — ` : 'All cashiers · '}Daily totals for the selected period
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-6">
+                {isLoading ? <ChartSkeleton /> : (!reportData || reportData.salesTrend.length === 0) ? (
+                  <EmptyChart message="No sales data for this period." />
+                ) : (
+                  <ResponsiveContainer width="100%" height={320}>
+                    <LineChart data={reportData.salesTrend} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                      <XAxis dataKey="date" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
+                      <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={v => `₱${v}`} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: 'var(--background)', borderColor: 'var(--border)', borderRadius: '12px' }}
+                        formatter={(v: any) => [`₱${Number(v).toLocaleString()}`, 'Revenue']}
+                      />
+                      <Legend />
+                      <Line type="monotone" dataKey="sales" stroke="#b45309" strokeWidth={3} name="Daily Revenue" dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border rounded-2xl shadow-sm bg-card overflow-hidden">
+              <CardHeader className="border-b bg-muted/20">
+                <CardTitle className="text-base font-bold">Sales by Category</CardTitle>
+                <CardDescription>
+                  {selectedCashier ? `${selectedCashier.email.split('@')[0]}'s product mix` : 'Which product categories are selling the most'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-6 flex items-center justify-center">
+                {isLoading ? <ChartSkeleton /> : (!reportData || reportData.categoryDistribution.length === 0) ? (
+                  <EmptyChart message="No category data available." />
+                ) : (
+                  <ResponsiveContainer width="100%" height={320}>
+                    <PieChart>
+                      <Pie
+                        data={reportData.categoryDistribution}
+                        cx="50%" cy="50%" labelLine outerRadius={95}
+                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                        dataKey="value"
+                      >
+                        {reportData.categoryDistribution.map((_, i) => (
+                          <Cell key={i} fill={PALETTE_COLORS[i % PALETTE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={v => `₱${Number(v).toLocaleString()}`} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border rounded-2xl shadow-sm bg-card overflow-hidden">
+              <CardHeader className="border-b bg-muted/20">
+                <CardTitle className="text-base font-bold">Daily Transaction Count</CardTitle>
+                <CardDescription>How many orders were processed each day</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-6">
+                {isLoading ? <ChartSkeleton /> : (!reportData || reportData.salesTrend.length === 0) ? (
+                  <EmptyChart message="No transaction data available." />
+                ) : (
+                  <ResponsiveContainer width="100%" height={320}>
+                    <BarChart data={reportData.salesTrend}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                      <XAxis dataKey="date" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
+                      <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
+                      <Tooltip contentStyle={{ backgroundColor: 'var(--background)', borderColor: 'var(--border)', borderRadius: '12px' }} />
+                      <Bar dataKey="transactions" fill="#ea580c" name="Orders" radius={[6, 6, 0, 0]} maxBarSize={45} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Top Products */}
+          <Card className="border rounded-2xl shadow-sm bg-card overflow-hidden">
+            <CardHeader className="border-b bg-muted/20">
+              <CardTitle className="text-base font-bold">Top Selling Products</CardTitle>
+              <CardDescription>
+                {selectedCashier ? `${selectedCashier.email.split('@')[0]}'s best products by revenue` : 'Best performers ranked by total revenue generated'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              {isLoading ? (
+                <div className="p-12 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></div>
+              ) : (!reportData || reportData.topProducts.length === 0) ? (
+                <div className="p-12 text-center text-xs text-muted-foreground">No products sold in this period yet.</div>
+              ) : (
+                <div className="divide-y divide-border">
+                  {reportData.topProducts.map((product, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-4 px-6 hover:bg-muted/20 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <span className={`inline-flex h-7 w-7 items-center justify-center text-xs font-black rounded-lg border ${
+                          idx === 0 ? 'bg-amber-500/20 text-amber-700 border-amber-500/30' :
+                          idx === 1 ? 'bg-slate-500/10 text-slate-600 border-slate-500/20' :
+                          idx === 2 ? 'bg-orange-500/10 text-orange-700 border-orange-500/20' :
+                          'bg-primary/10 text-primary border-primary/20'
+                        }`}>{idx + 1}</span>
+                        <div>
+                          <p className="font-bold text-sm text-foreground">{product.name}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {product.sales.toLocaleString()} {product.sales === 1 ? 'unit' : 'units'} sold
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-extrabold text-sm text-primary">
+                          ₱{product.revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-[10px] font-bold text-muted-foreground bg-muted border px-2 py-0.5 rounded-md mt-0.5">
+                          {computedMetrics.totalRevenue > 0
+                            ? ((product.revenue / computedMetrics.totalRevenue) * 100).toFixed(1)
+                            : 0}% of total revenue
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+        </TabsContent>
+
+        {/* ── Cashier Performance Tab (admin only) ─────────────────────── */}
+        {isAdmin && (
+          <TabsContent value="performance" className="mt-0 focus-visible:ring-0 focus-visible:outline-none">
+            <Card className="border rounded-2xl shadow-sm bg-card overflow-hidden">
+              <CardHeader className="border-b bg-muted/20 flex-row items-center gap-3 space-y-0">
+                <div className="h-9 w-9 rounded-xl bg-amber-500/15 border border-amber-500/25 flex items-center justify-center shrink-0">
+                  <Trophy className="h-4 w-4 text-amber-600" />
+                </div>
+                <div className="flex-1">
+                  <CardTitle className="text-base font-bold">Cashier Performance Summary</CardTitle>
+                  <CardDescription>
+                    Revenue & transactions per cashier for {timeRangeLabel.toLowerCase()}
+                  </CardDescription>
+                </div>
+                {isCashierPerfLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              </CardHeader>
+              <CardContent className="p-0">
+                {isCashierPerfLoading ? (
+                  <div className="p-10 text-center">
+                    <Loader2 className="h-5 w-5 animate-spin mx-auto text-amber-600" />
+                  </div>
+                ) : cashierPerformance.length === 0 ? (
+                  <div className="p-10 text-center text-xs text-muted-foreground">
+                    No cashier transaction data found for this period.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border">
+                    <div className="grid grid-cols-[auto_1fr_auto_auto_auto] gap-3 px-6 py-2.5 bg-muted/40 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                      <span className="w-6" />
+                      <span>Cashier</span>
+                      <span className="text-right w-28">Revenue</span>
+                      <span className="text-right w-24">Transactions</span>
+                      <span className="text-right w-24">Avg / Order</span>
+                    </div>
+                    {cashierPerformance.map((row, idx) => {
+                      const totalRevenue = cashierPerformance.reduce((s, r) => s + r.revenue, 0)
+                      const share = totalRevenue > 0 ? ((row.revenue / totalRevenue) * 100).toFixed(1) : '0.0'
+                      return (
+                        <div key={row.cashier_id} className="grid grid-cols-[auto_1fr_auto_auto_auto] gap-3 items-center px-6 py-4 hover:bg-muted/20 transition-colors group">
+                          <span className={`inline-flex h-7 w-7 items-center justify-center text-xs font-black rounded-xl border ${
+                            idx === 0 ? 'bg-amber-500/20 text-amber-700 border-amber-500/30' :
+                            idx === 1 ? 'bg-slate-500/10 text-slate-600 border-slate-500/20' :
+                            idx === 2 ? 'bg-orange-500/10 text-orange-700 border-orange-500/20' :
+                            'bg-muted text-muted-foreground border-border'
+                          }`}>{idx + 1}</span>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <div className="h-7 w-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+                                <UserCircle className="h-3.5 w-3.5 text-primary" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-bold text-sm text-foreground truncate">{row.cashier_email.split('@')[0]}</p>
+                                <p className="text-[10px] text-muted-foreground truncate">{row.cashier_email}</p>
+                              </div>
+                              <button
+                                onClick={() => { setSelectedCashierId(row.cashier_id); setActiveTab('overview') }}
+                                className="ml-2 text-[10px] font-semibold text-primary opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 hover:underline"
+                              >
+                                View charts <ArrowRight className="h-2.5 w-2.5" />
+                              </button>
+                            </div>
+                            <div className="mt-2 flex items-center gap-2">
+                              <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                                <div
+                                  className="h-full bg-amber-500 rounded-full transition-all duration-500"
+                                  style={{ width: `${share}%` }}
+                                />
+                              </div>
+                              <span className="text-[10px] font-semibold text-muted-foreground shrink-0">{share}% share</span>
+                            </div>
+                          </div>
+                          <span className="text-right font-extrabold text-sm text-primary w-28">
+                            ₱{row.revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </span>
+                          <span className="text-right font-bold text-sm text-foreground w-24">
+                            {row.transactions.toLocaleString()}
+                          </span>
+                          <span className="text-right font-semibold text-sm text-muted-foreground w-24">
+                            ₱{row.avg_order_value.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+
+        {/* ── Order History Tab ─────────────────────────────────────────── */}
+        <TabsContent value="orders" className="mt-0 focus-visible:ring-0 focus-visible:outline-none">
+          <OrderActivityLog
+            isOpen={true}
+            onClose={() => {}}
+            allGroupedOrders={allGroupedOrders}
+            isLogsLoading={isLogsLoading}
+            onRefresh={loadOrderLogs}
+            activeFilterLabel={selectedCashier ? `Filtered: ${selectedCashier.email}` : undefined}
+            inline={true}
+          />
+        </TabsContent>
+
+      </Tabs>
     </div>
   )
 }

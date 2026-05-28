@@ -49,12 +49,20 @@ const orderRepository = {
     )
   },
 
-  async findAllLogs() {
+  async findAllLogs(cashierId = null) {
+    const params = []
+    const cashierClause = cashierId ? ' AND o.cashier_id = $1' : ''
+    if (cashierId) params.push(cashierId)
+
     const result = await db.query(
-      `SELECT id, order_id, action, note, created_at 
-       FROM order_logs 
-       ORDER BY created_at DESC 
-       LIMIT 200`
+      `SELECT ol.id, ol.order_id, ol.action, ol.note, ol.created_at,
+              o.cashier_id, o.cashier_email
+       FROM order_logs ol
+       LEFT JOIN orders o ON ol.order_id = o.id
+       WHERE 1=1${cashierClause}
+       ORDER BY ol.created_at DESC
+       LIMIT 500`,
+      params
     )
     return result.rows
   }

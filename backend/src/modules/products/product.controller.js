@@ -122,6 +122,18 @@ const productController = {
       next(error)
     }
   },
+
+  async getCashierAnalytics(_req, res, next) {
+    try {
+      console.log('📊 [API] GET /api/products/cashiers/analytics - Fetching cashier analytics')
+      const analytics = await productService.getCashierAnalytics()
+      console.log('📊 [API] Cashier analytics retrieved:', analytics.length, 'cashiers')
+      return res.json({ data: analytics })
+    } catch (error) {
+      console.error('❌ [API] Error fetching cashier analytics:', error)
+      next(error)
+    }
+  },
 }
 
 module.exports = { productController }

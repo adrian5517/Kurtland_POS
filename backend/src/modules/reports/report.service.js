@@ -1,37 +1,23 @@
 const { reportRepository } = require('./report.repository')
 
 class ReportService {
-  async generateSalesReport(range) {
-    let intervalDays = '7'
-    let bucketUnit = 'day'
-    let dateSymbols = 'Mon DD'
-
-    // Secure mapping configurations
+  _getRangeConfig(range) {
     switch (range) {
-      case 'day':
-        intervalDays = '1'
-        bucketUnit = 'hour'
-        dateSymbols = 'HH24:00'
-        break
-      case 'month':
-        intervalDays = '30'
-        bucketUnit = 'day'
-        dateSymbols = 'Mon DD'
-        break
-      case '3months':
-        intervalDays = '90'
-        bucketUnit = 'week'
-        dateSymbols = 'WW (Mon)'
-        break
-      case 'week':
-      default:
-        intervalDays = '7'
-        bucketUnit = 'day'
-        dateSymbols = 'Mon DD'
-        break
+      case 'day':     return { intervalDays: '1',  bucketUnit: 'hour', dateSymbols: 'HH24:00' }
+      case 'month':   return { intervalDays: '30', bucketUnit: 'day',  dateSymbols: 'Mon DD' }
+      case '3months': return { intervalDays: '90', bucketUnit: 'week', dateSymbols: 'WW (Mon)' }
+      default:        return { intervalDays: '7',  bucketUnit: 'day',  dateSymbols: 'Mon DD' }
     }
+  }
 
-    return await reportRepository.getSalesData(intervalDays, bucketUnit, dateSymbols)
+  async generateSalesReport(range, cashierId = null) {
+    const { intervalDays, bucketUnit, dateSymbols } = this._getRangeConfig(range)
+    return await reportRepository.getSalesData(intervalDays, bucketUnit, dateSymbols, cashierId)
+  }
+
+  async getCashierPerformance(range) {
+    const { intervalDays } = this._getRangeConfig(range)
+    return await reportRepository.getCashierPerformance(intervalDays)
   }
 }
 

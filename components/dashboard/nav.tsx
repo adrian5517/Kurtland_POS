@@ -16,11 +16,12 @@ import { clearAuthSession, getAuthSession } from '@/lib/auth'
 import type { AuthSession } from '@/lib/auth'
 
 const NAV_ITEMS = [
-  { href: '/dashboard',           label: 'POS',       icon: ShoppingCart, adminOnly: false },
-  { href: '/dashboard/inventory', label: 'Inventory', icon: Boxes,        adminOnly: true  },
-  { href: '/dashboard/reports',   label: 'Reports',   icon: BarChart3,    adminOnly: true  },
-  { href: '/dashboard/users',     label: 'Users',     icon: Users,        adminOnly: true  },
-  { href: '/dashboard/settings',  label: 'Settings',  icon: Settings,     adminOnly: true  },
+  { href: '/dashboard',                    label: 'POS',                 icon: ShoppingCart, adminOnly: false },
+  { href: '/dashboard/inventory',          label: 'Inventory',           icon: Boxes,        adminOnly: true  },
+  { href: '/dashboard/cashier-analytics',  label: 'Cashier Analytics',   icon: BarChart3,    adminOnly: true  },
+  { href: '/dashboard/reports',            label: 'Reports',             icon: BarChart3,    adminOnly: true  },
+  { href: '/dashboard/users',              label: 'Users',               icon: Users,        adminOnly: true  },
+  { href: '/dashboard/settings',           label: 'Settings',            icon: Settings,     adminOnly: true  },
 ]
 
 type NavItem = {

@@ -641,8 +641,8 @@ export default function InventoryPage() {
       console.log('📡 Fetching cashiers from /api/products/cashiers/list')
       const headers = apiHeaders(session.token)
       console.log('📡 Request headers:', {
-        'content-type': headers['Content-Type'],
-        'authorization': `Bearer ${headers['Authorization']?.substring(0, 20)}...`,
+        'content-type': headers.get('Content-Type'),
+        'authorization': `Bearer ${headers.get('Authorization')?.substring(0, 20)}...`,
       })
       
       // Load all cashiers

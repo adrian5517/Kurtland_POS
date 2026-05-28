@@ -188,6 +188,10 @@ const productService = {
       assignments,
     }
   },
+
+  async getCashierAnalytics() {
+    return await productRepository.getCashierAnalytics()
+  },
 }
 
 module.exports = { productService }

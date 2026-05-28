@@ -12,7 +12,10 @@ const orderController = {
 
   async getLogs(req, res, next) {
     try {
-      const logs = await orderService.getOrderLogs()
+      const { cashier_id } = req.query
+      // Validate cashier_id: must be a positive integer if provided
+      const cashierId = cashier_id && /^\d+$/.test(cashier_id) ? parseInt(cashier_id, 10) : null
+      const logs = await orderService.getOrderLogs(cashierId)
       return res.status(200).json({ data: logs })
     } catch (error) {
       next(error)

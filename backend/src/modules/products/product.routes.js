@@ -11,6 +11,7 @@ productRouter.use(requireAuth)
 
 // Product distribution routes (admin only) - must come before /:id routes
 productRouter.get('/cashiers/list', requireRole('admin'), productController.getCashiers)
+productRouter.get('/cashiers/analytics', requireRole('admin'), productController.getCashierAnalytics)
 
 // General product routes
 productRouter.get('/', productController.index)
