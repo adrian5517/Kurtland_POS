@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { getAuthSession } from '@/lib/auth'
+import { validateAuthSession } from '@/lib/auth'
 
 type DashboardAccessGuardProps = {
   children: ReactNode
@@ -15,7 +15,8 @@ export default function DashboardAccessGuard({ children }: DashboardAccessGuardP
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    const session = getAuthSession()
+    // Validate session (checks token expiration)
+    const session = validateAuthSession()
 
     if (!session?.token) {
       router.replace('/')

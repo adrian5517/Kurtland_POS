@@ -155,6 +155,39 @@ const productService = {
     }
     return deleted
   },
+
+  async getProductsByCashier(cashierId) {
+    return await productRepository.findByCashierId(cashierId)
+  },
+
+  async getAllCashiers() {
+    return await productRepository.getAllCashiers()
+  },
+
+  async getCashiersForProduct(productId) {
+    return await productRepository.getCashiersForProduct(productId)
+  },
+
+  async assignProductToCashiers(productId, cashierIds) {
+    // First, remove all existing assignments for this product
+    const existingCashiers = await productRepository.getCashiersForProduct(productId)
+    for (const cashierId of existingCashiers) {
+      await productRepository.removeFromCashier(productId, cashierId)
+    }
+
+    // Then, assign to the new set of cashiers
+    const assignments = []
+    for (const cashierId of cashierIds) {
+      const result = await productRepository.assignToCashier(productId, cashierId)
+      if (result) assignments.push(result)
+    }
+
+    return {
+      productId,
+      assignedToCashiers: cashierIds.length,
+      assignments,
+    }
+  },
 }
 
 module.exports = { productService }

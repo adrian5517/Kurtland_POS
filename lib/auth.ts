@@ -16,6 +16,46 @@ function normalizeRole(role: string | null | undefined): AuthUser['role'] {
   return String(role || '').toLowerCase() === 'admin' ? 'admin' : 'cashier'
 }
 
+/**
+ * Check if a JWT token is expired
+ * Decodes the token payload and compares expiration time
+ */
+export function isTokenExpired(token: string): boolean {
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return true
+
+    const payload = JSON.parse(atob(parts[1]))
+    
+    // JWT exp is in seconds, Date.now() is in milliseconds
+    const expirationTime = (payload.exp || 0) * 1000
+    return Date.now() >= expirationTime
+  } catch {
+    return true // Treat parsing errors as expired
+  }
+}
+
+/**
+ * Validate and return auth session if valid
+ * Returns null if session doesn't exist or token is expired
+ */
+export function validateAuthSession(): AuthSession | null {
+  const session = getAuthSession()
+  
+  if (!session) {
+    return null
+  }
+
+  // Check if token is expired
+  if (isTokenExpired(session.token)) {
+    // Clear expired session
+    clearAuthSession()
+    return null
+  }
+
+  return session
+}
+
 export function getAuthSession(): AuthSession | null {
   if (typeof window === 'undefined') {
     return null

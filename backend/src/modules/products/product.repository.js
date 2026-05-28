@@ -41,7 +41,7 @@ const productRepository = {
   // 1. Kasama na ang is_active at srp_price sa listahan ng kinukuha
   async findAll() {
     const result = await db.query(
-      `SELECT id, name, sku, category, price::text, srp_price::text, quantity, is_active, image_url, image_public_id, created_at::text 
+      `SELECT id, name, sku, category, price::text, srp_price::text, min_stock, quantity, is_active, image_url, image_public_id, created_at::text 
        FROM products 
        WHERE is_deleted = false 
        ORDER BY id DESC`,
@@ -160,6 +160,61 @@ const productRepository = {
     )
 
     return result.rows[0] || null
+  },
+
+  // 5. Get products assigned to a specific cashier
+  async findByCashierId(cashierId) {
+    const result = await db.query(
+      `SELECT p.id, p.name, p.sku, p.category, p.price::text, p.srp_price::text, p.min_stock, 
+              p.quantity, p.is_active, p.image_url, p.image_public_id, p.created_at::text
+       FROM products p
+       INNER JOIN product_cashier_assignments pca ON p.id = pca.product_id
+       WHERE pca.cashier_id = $1 AND p.is_deleted = false
+       ORDER BY p.id DESC`,
+      [cashierId],
+    )
+    return result.rows
+  },
+
+  // 6. Assign product to a cashier
+  async assignToCashier(productId, cashierId) {
+    const result = await db.query(
+      `INSERT INTO product_cashier_assignments (product_id, cashier_id, created_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (product_id, cashier_id) DO NOTHING
+       RETURNING id`,
+      [productId, cashierId],
+    )
+    return result.rows[0] || null
+  },
+
+  // 7. Remove product from cashier
+  async removeFromCashier(productId, cashierId) {
+    const result = await db.query(
+      `DELETE FROM product_cashier_assignments
+       WHERE product_id = $1 AND cashier_id = $2
+       RETURNING id`,
+      [productId, cashierId],
+    )
+    return result.rows[0] || null
+  },
+
+  // 8. Get all cashiers assigned to a product
+  async getCashiersForProduct(productId) {
+    const result = await db.query(
+      `SELECT DISTINCT cashier_id FROM product_cashier_assignments
+       WHERE product_id = $1`,
+      [productId],
+    )
+    return result.rows.map(row => row.cashier_id)
+  },
+
+  // 9. Get all cashiers (from users table)
+  async getAllCashiers() {
+    const result = await db.query(
+      `SELECT id, email FROM users WHERE role = 'cashier' ORDER BY email ASC`,
+    )
+    return result.rows
   },
 }
 

@@ -17,6 +17,15 @@ const STARTER_PRODUCTS = [
 
 async function bootstrapDatabase() {
   await db.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'cashier',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS products (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
@@ -54,6 +63,7 @@ async function bootstrapDatabase() {
   `)
 
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS products_sku_idx ON products (sku)')
+  await db.query('CREATE UNIQUE INDEX IF NOT EXISTS users_email_idx ON users (email)')
   await db.query(`
     CREATE TABLE IF NOT EXISTS sku_counters (
       prefix TEXT PRIMARY KEY,
@@ -68,6 +78,19 @@ async function bootstrapDatabase() {
   await db.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true')
   await db.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT false')
 
+  // Create product_cashier_assignments table for product distribution
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS product_cashier_assignments (
+      id SERIAL PRIMARY KEY,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      cashier_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(product_id, cashier_id)
+    )
+  `)
+  await db.query('CREATE INDEX IF NOT EXISTS idx_product_cashier_product ON product_cashier_assignments(product_id)')
+  await db.query('CREATE INDEX IF NOT EXISTS idx_product_cashier_cashier ON product_cashier_assignments(cashier_id)')
+
   const { rows } = await db.query('SELECT COUNT(*)::int AS count FROM products')
 
   if (rows[0]?.count === 0) {
@@ -80,6 +103,21 @@ async function bootstrapDatabase() {
       )
     }
   }
+
+  // Seed default admin user if no users exist
+  const userCheck = await db.query('SELECT COUNT(*)::int AS count FROM users')
+  if (userCheck.rows[0]?.count === 0) {
+    const bcryptjs = require('bcryptjs')
+    const hashedPassword = await bcryptjs.hash('admin123', 10)
+    await db.query(
+      `INSERT INTO users (email, password_hash, name, role)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (email) DO NOTHING`,
+      ['admin@kurt-land.com', hashedPassword, 'Admin User', 'admin'],
+    )
+    console.log('✓ Default admin user created: admin@kurt-land.com / admin123')
+  }
+
     // Seed/repair sku_counters from existing products to ensure counters start
     // after the highest suffix observed for each prefix (first-3-letter prefix).
     await db.query(`

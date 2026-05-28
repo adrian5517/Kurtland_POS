@@ -62,7 +62,7 @@ const orderService = {
           throw new HttpError(409, `${product.name} has insufficient stock`)
         }
 
-        const unitPrice = toNumber(product.price)
+        const unitPrice = toNumber(product.srp_price ?? product.price)
         return {
           productId,
           sku: product.sku,

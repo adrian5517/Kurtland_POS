@@ -10,7 +10,7 @@ import {
   Plus, Edit2, Trash2, Search, Package, AlertTriangle, Layers, X,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ArrowUpDown,
   ArrowUp, ArrowDown, Filter, RefreshCw, TrendingDown, ShieldAlert,
-  CheckCircle2, SlidersHorizontal, EyeOff, Eye
+  CheckCircle2, SlidersHorizontal, EyeOff, Eye, TrendingUp, BarChart3
 } from 'lucide-react'
 import ProductForm from '@/components/inventory/product-form'
 import ProductEditForm from '@/components/inventory/product-edit-form'
@@ -29,6 +29,7 @@ type ApiProduct = {
   srp_price: string
   quantity: number
   is_active: boolean
+  min_stock?: number
   profit?: string | number
   profit_margin?: string | number
   image_url: string | null
@@ -71,7 +72,7 @@ function mapProduct(product: ApiProduct): InventoryItem {
     code: product.sku || '',
     name: product.name || 'Unnamed Product',
     category: product.category || 'Products',
-    minStock: 5,
+    minStock: product.min_stock || 5,
     minPrice: price,
     maxPrice: price,
     srpPrice: srpPrice,
@@ -207,11 +208,22 @@ function StockBar({ current, min }: { current: number; min: number }) {
 export default function InventoryPage() {
   // Derive admin status from the auth session role field.
   // Adjust the role string(s) to match your actual auth payload.
-  const isAdmin = useMemo(() => {
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
     const session = getAuthSession()
+    console.log('🔐 Auth session:', session)
     const role = (session as any)?.role ?? (session as any)?.user?.role ?? ''
-    return role === 'admin' || role === 'ADMIN' || role === 'superadmin'
+    console.log('👤 User role:', role)
+    const adminStatus = role === 'admin' || role === 'ADMIN' || role === 'superadmin'
+    console.log('👑 Is admin:', adminStatus)
+    setIsAdmin(adminStatus)
   }, [])
+
+  // Log when isAdmin changes
+  useEffect(() => {
+    console.log('✅ isAdmin state updated:', isAdmin)
+  }, [isAdmin])
 
   const [inventory, setInventory] = useState<InventoryItem[]>([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -224,10 +236,32 @@ export default function InventoryPage() {
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null)
   const [editingProduct, setEditingProduct] = useState<InventoryItem | null>(null)
   const [stockValue, setStockValue] = useState('')
+  const [restockingProduct, setRestockingProduct] = useState<string | null>(null)
+  const [restockQuantity, setRestockQuantity] = useState('')
   const [showAddProduct, setShowAddProduct] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+
+  // Bulk profit margin control states
+  const [showBulkProfitModal, setShowBulkProfitModal] = useState(false)
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set())
+  const [bulkProfitMargin, setBulkProfitMargin] = useState('')
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false)
+  
+  // Product selector for distribution
+  const [showProductSelector, setShowProductSelector] = useState(false)
+  const [distributionSearch, setDistributionSearch] = useState('')
+  const [selectedDistributionProducts, setSelectedDistributionProducts] = useState<Set<string>>(new Set())
+
+  // Product distribution states
+  const [showDistributionModal, setShowDistributionModal] = useState(false)
+  const [distributionProduct, setDistributionProduct] = useState<InventoryItem | null>(null)
+  const [distributionProducts, setDistributionProducts] = useState<InventoryItem[]>([])
+  const [cashiers, setCashiers] = useState<Array<{ id: number; email: string }>>([])
+  const [selectedCashiers, setSelectedCashiers] = useState<Set<number>>(new Set())
+  const [isLoadingCashiers, setIsLoadingCashiers] = useState(false)
+  const [isDistributing, setIsDistributing] = useState(false)
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
@@ -284,6 +318,18 @@ export default function InventoryPage() {
     inventory.reduce((sum, item) => sum + (item.currentStock * item.minPrice), 0),
     [inventory]
   )
+
+  const totalProfit = useMemo(() => {
+    const activeItems = inventory.filter(item => item.isActive)
+    return activeItems.reduce((sum, item) => sum + (item.profit * item.currentStock), 0)
+  }, [inventory])
+
+  const avgProfitMargin = useMemo(() => {
+    const activeItems = inventory.filter(item => item.isActive && item.currentStock > 0)
+    if (activeItems.length === 0) return 0
+    const totalMargin = activeItems.reduce((sum, item) => sum + item.profitMargin, 0)
+    return totalMargin / activeItems.length
+  }, [inventory])
 
   // ── Filtering + sorting ─────────────────────────────────────────────────────
 
@@ -360,8 +406,9 @@ export default function InventoryPage() {
           sku: productData.sku,
           category: productData.category, 
           price: Number(productData.minPrice),
-          srpPrice: Number(productData.srpPrice || 0),
+          srpPrice: Number(productData.maxPrice || productData.minPrice),
           quantity: Number(productData.stock),
+          min_stock: Number(productData.minStock || 5),
           isActive: productData.isActive ?? true,
           imageUrl: productData.imageUrl, 
           imagePublicId: productData.imagePublicId,
@@ -389,7 +436,8 @@ export default function InventoryPage() {
           name: productData.name, 
           category: productData.category,
           price: Number(productData.minPrice),
-          srpPrice: Number(productData.srpPrice || 0),
+          srpPrice: Number(productData.maxPrice || productData.minPrice),
+          min_stock: Number(productData.minStock || 5),
           isActive: productData.isActive,
           imageUrl: productData.imageUrl, 
           imagePublicId: productData.imagePublicId,
@@ -450,6 +498,31 @@ export default function InventoryPage() {
     }
   }
 
+  const handleRestockSubmit = async (id: string, quantityToAdd: number) => {
+    if (quantityToAdd <= 0) { toast.error('Restock quantity must be positive.'); return }
+    const session = getAuthSession()
+    if (!session?.token) return
+
+    try {
+      const item = inventory.find(i => i.id === id)
+      if (!item) { toast.error('Product not found'); return }
+      
+      const newStock = item.currentStock + quantityToAdd
+      const response = await apiFetch(`/api/products/${id}`, {
+        method: 'PUT',
+        headers: { ...Object.fromEntries(apiHeaders(session.token).entries()), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity: newStock }),
+      })
+      if (!response.ok) throw new Error()
+      setInventory(prev => prev.map(p => p.id === id ? { ...p, currentStock: newStock } : p))
+      toast.success(`✓ ${item.name} restocked (+${quantityToAdd} units → ${newStock} total)`)
+      setRestockingProduct(null)
+      setRestockQuantity('')
+    } catch {
+      toast.error('Failed to restock product')
+    }
+  }
+
   const handleDeleteProduct = async (id: string) => {
     const session = getAuthSession()
     if (!session?.token) { toast.error('Please sign in again.'); return }
@@ -466,6 +539,200 @@ export default function InventoryPage() {
       toast.success(`${item?.name || 'Product'} deleted`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to delete product')
+    }
+  }
+
+  const handleBulkProfitUpdate = async () => {
+    if (selectedProductIds.size === 0) {
+      toast.error('Please select at least one product')
+      return
+    }
+    
+    const profitMargin = parseFloat(bulkProfitMargin)
+    if (isNaN(profitMargin) || profitMargin < 0 || profitMargin > 100) {
+      toast.error('Please enter a valid profit margin (0-100%)')
+      return
+    }
+
+    const session = getAuthSession()
+    if (!session?.token) {
+      toast.error('Please sign in again')
+      return
+    }
+
+    setIsBulkUpdating(true)
+    try {
+      let successCount = 0
+      for (const productId of selectedProductIds) {
+        const product = inventory.find(p => p.id === productId)
+        if (!product) continue
+
+        // Calculate new SRP based on profit margin
+        // profitMargin = (srpPrice - costPrice) / costPrice * 100
+        // srpPrice = costPrice * (1 + profitMargin/100)
+        const newSrpPrice = product.minPrice * (1 + profitMargin / 100)
+
+        const response = await apiFetch(`/api/products/${productId}`, {
+          method: 'PUT',
+          headers: { ...Object.fromEntries(apiHeaders(session.token).entries()), 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            srpPrice: Number(newSrpPrice.toFixed(2)),
+          }),
+        })
+
+        if (response.ok) {
+          successCount++
+        }
+      }
+
+      if (successCount > 0) {
+        await loadInventory(true)
+        setShowBulkProfitModal(false)
+        setSelectedProductIds(new Set())
+        setBulkProfitMargin('')
+        toast.success(`✓ Updated profit margin for ${successCount} product(s)`)
+      } else {
+        toast.error('Failed to update products')
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update profit margin')
+    } finally {
+      setIsBulkUpdating(false)
+    }
+  }
+
+  const openDistributionModal = async (product: InventoryItem) => {
+    console.log('🔄 Opening distribution modal for:', product.name)
+    setDistributionProduct(product)
+    setIsLoadingCashiers(true)
+    setSelectedCashiers(new Set())
+
+    const session = getAuthSession()
+    console.log('🔐 Session for API call:', { 
+      hasToken: !!session?.token, 
+      tokenLength: session?.token?.length,
+      hasUser: !!session?.user,
+      userRole: (session as any)?.user?.role
+    })
+    
+    if (!session?.token) {
+      console.error('❌ No session token')
+      toast.error('Please sign in again')
+      setIsLoadingCashiers(false)
+      return
+    }
+
+    try {
+      console.log('📡 Fetching cashiers from /api/products/cashiers/list')
+      const headers = apiHeaders(session.token)
+      console.log('📡 Request headers:', {
+        'content-type': headers['Content-Type'],
+        'authorization': `Bearer ${headers['Authorization']?.substring(0, 20)}...`,
+      })
+      
+      // Load all cashiers
+      const cashierResponse = await apiFetch('/api/products/cashiers/list', {
+        method: 'GET',
+        headers,
+      })
+      
+      console.log('📡 Cashier response status:', cashierResponse.status)
+      const cashierData = await cashierResponse.json()
+      console.log('✓ Cashiers response:', { 
+        ok: cashierResponse.ok, 
+        status: cashierResponse.status,
+        data: cashierData,
+        dataArray: Array.isArray(cashierData?.data),
+        dataLength: cashierData?.data?.length
+      })
+      
+      if (cashierResponse.ok) {
+        console.log('✓ Setting cashiers:', cashierData.data)
+        setCashiers(cashierData.data || [])
+      } else {
+        console.error('❌ Failed to fetch cashiers:', { status: cashierResponse.status, data: cashierData })
+        toast.error(`Failed to load cashiers: ${cashierResponse.status}`)
+      }
+
+      console.log('📡 Fetching assigned cashiers for product', product.id)
+      // Load cashiers already assigned to this product
+      const assignedResponse = await apiFetch(`/api/products/${product.id}/cashiers`, {
+        headers,
+      })
+      const assignedData = await assignedResponse.json()
+      console.log('✓ Assigned response:', { ok: assignedResponse.ok, data: assignedData })
+      if (assignedResponse.ok) {
+        setSelectedCashiers(new Set(assignedData.data || []))
+      } else {
+        console.error('❌ Failed to fetch assigned cashiers:', assignedData)
+      }
+
+      console.log('✓ Showing distribution modal')
+      setShowDistributionModal(true)
+    } catch (error) {
+      console.error('❌ Error in openDistributionModal:', error)
+      toast.error('Failed to load cashiers')
+    } finally {
+      setIsLoadingCashiers(false)
+    }
+  }
+
+  const handleDistributeProduct = async () => {
+    const productsToDistribute = distributionProducts.length > 0 ? distributionProducts : (distributionProduct ? [distributionProduct] : [])
+    
+    if (productsToDistribute.length === 0) {
+      console.error('❌ No products selected')
+      return
+    }
+
+    if (selectedCashiers.size === 0) {
+      toast.error('Please select at least one cashier')
+      return
+    }
+
+    const session = getAuthSession()
+    if (!session?.token) {
+      console.error('❌ No session token')
+      toast.error('Please sign in again')
+      return
+    }
+
+    setIsDistributing(true)
+    try {
+      const cashierIds = Array.from(selectedCashiers)
+      console.log('📦 Distributing products:', productsToDistribute.map(p => p.name).join(', '), 'to cashiers:', cashierIds)
+      
+      // Distribute each product to the selected cashiers
+      for (const product of productsToDistribute) {
+        const payload = { cashierIds }
+        console.log('📡 POST /api/products/' + product.id + '/assign-cashiers', payload)
+        
+        const response = await apiFetch(`/api/products/${product.id}/assign-cashiers`, {
+          method: 'POST',
+          headers: { ...Object.fromEntries(apiHeaders(session.token).entries()), 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+
+        const responseData = await response.json()
+        console.log('✓ Distribution response:', { ok: response.ok, data: responseData })
+        
+        if (!response.ok) {
+          throw new Error(responseData?.message || `Failed to distribute ${product.name}`)
+        }
+      }
+
+      setShowDistributionModal(false)
+      setDistributionProduct(null)
+      setDistributionProducts([])
+      setSelectedCashiers(new Set())
+      const productsCount = productsToDistribute.length
+      const productNames = productsCount === 1 ? productsToDistribute[0].name : `${productsCount} products`
+      toast.success(`✓ ${productNames} assigned to ${selectedCashiers.size} cashier(s)`)
+    } catch (error) {
+      console.error('❌ Error in handleDistributeProduct:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to distribute product')
+    } finally {
+      setIsDistributing(false)
     }
   }
 
@@ -498,6 +765,29 @@ export default function InventoryPage() {
           >
             <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           </Button>
+          {isAdmin && (
+            <Button
+              onClick={() => {
+                setShowProductSelector(true)
+                setDistributionSearch('')
+              }}
+              variant="outline"
+              className="gap-2 rounded-xl px-5 shadow-sm transition-all"
+              title="Distribute products to cashiers"
+            >
+              <Package className="h-4 w-4" />
+              Distribute
+            </Button>
+          )}
+          <Button
+            onClick={() => setShowBulkProfitModal(true)}
+            variant="outline"
+            className="gap-2 rounded-xl px-5 shadow-sm transition-all"
+            title="Update profit margin for multiple products"
+          >
+            <TrendingUp className="h-4 w-4" />
+            Bulk Profit
+          </Button>
           <Button
             onClick={() => setShowAddProduct(true)}
             className="gap-2 rounded-xl bg-primary px-5 shadow-sm hover:bg-primary/90 transition-all"
@@ -518,13 +808,24 @@ export default function InventoryPage() {
       )}
 
       {/* ── Low stock warning ── */}
-      {lowStockItems.length > 0 && <StockWarning lowStockProducts={lowStockItems} />}
+      {lowStockItems.length > 0 && (
+        <StockWarning 
+          lowStockProducts={lowStockItems}
+          onRestock={(id, name) => {
+            setRestockingProduct(id)
+            setRestockQuantity('')
+            setTimeout(() => {
+              document.querySelector(`[data-product-id="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            }, 100)
+          }}
+        />
+      )}
 
       {/* ── KPI Cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label="Total Products"
-          value={isLoading ? '…' : inventory.length.toLocaleString()}
+          value={isLoading ? '…' : inventory.filter(i => i.isActive).length.toLocaleString()}
           icon={Package}
           color="primary"
           loading={isLoading}
@@ -537,9 +838,16 @@ export default function InventoryPage() {
           loading={isLoading}
         />
         <StatCard
-          label="Inventory Value"
+          label="Inventory Cost"
           value={isLoading ? '…' : `₱${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           icon={Layers}
+          color="primary"
+          loading={isLoading}
+        />
+        <StatCard
+          label="Profit Potential"
+          value={isLoading ? '…' : `₱${totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          icon={TrendingUp}
           color="green"
           loading={isLoading}
         />
@@ -735,6 +1043,7 @@ export default function InventoryPage() {
                     return (
                       <tr
                         key={item.id}
+                        data-product-id={item.id}
                         className={`hover:bg-muted/30 transition-colors group ${!item.isActive ? 'opacity-65 bg-zinc-500/5' : ''}`}
                       >
                         {/* SKU */}
@@ -834,35 +1143,78 @@ export default function InventoryPage() {
 
                         {/* Actions */}
                         <td className="px-5 py-3.5 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-foreground rounded-lg"
-                              onClick={() => setEditingProduct(item)}
-                            >
-                              <Edit2 className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className={`h-8 w-8 rounded-lg ${item.isActive ? 'text-muted-foreground hover:text-amber-600' : 'text-amber-600 hover:text-amber-700'}`}
-                              onClick={() => toggleProductActiveStatus(item)}
-                              title={item.isActive ? "Deactivate product" : "Activate product"}
-                            >
-                              {item.isActive ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive rounded-lg"
-                              onClick={() => {
-                                if (confirm(`Delete ${item.name}?`)) handleDeleteProduct(item.id)
-                              }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
+                          {restockingProduct === item.id ? (
+                            <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                              <Input
+                                type="number"
+                                value={restockQuantity}
+                                onChange={(e) => setRestockQuantity(e.target.value)}
+                                placeholder="Qty"
+                                className="w-14 h-8 text-xs font-semibold text-center"
+                                autoFocus
+                                min="1"
+                              />
+                              <Button 
+                                size="sm" 
+                                className="h-8 px-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                                onClick={() => handleRestockSubmit(item.id, parseInt(restockQuantity, 10) || 0)}
+                              >
+                                Add
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="ghost" 
+                                className="h-8 w-8 p-0"
+                                onClick={() => setRestockingProduct(null)}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-emerald-600 rounded-lg transition-colors"
+                                onClick={() => {
+                                  setRestockingProduct(item.id)
+                                  setRestockQuantity('')
+                                }}
+                                title="Restock product"
+                              >
+                                <Plus className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-foreground rounded-lg"
+                                onClick={() => setEditingProduct(item)}
+                                title="Edit product"
+                              >
+                                <Edit2 className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-amber-600 rounded-lg"
+                                onClick={() => toggleProductActiveStatus(item)}
+                                title={item.isActive ? "Deactivate product" : "Activate product"}
+                              >
+                                {item.isActive ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive rounded-lg"
+                                onClick={() => {
+                                  if (confirm(`Delete ${item.name}?`)) handleDeleteProduct(item.id)
+                                }}
+                                title="Delete product"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )
@@ -950,6 +1302,334 @@ export default function InventoryPage() {
           categories={categories.filter(c => c !== 'all')}
           isAdmin={isAdmin}
         />
+      )}
+
+      {/* ── Bulk Profit Margin Modal ── */}
+      {showBulkProfitModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <Card className="w-full max-w-2xl shadow-lg rounded-2xl">
+            <CardHeader className="border-b pb-4">
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5" />
+                Bulk Profit Margin Control
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6 pt-6">
+              {/* Product Selection Table */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Select Products</Label>
+                <div className="border rounded-lg max-h-64 overflow-y-auto">
+                  <div className="space-y-1 p-2">
+                    {inventory.length === 0 ? (
+                      <p className="text-sm text-muted-foreground p-2">No products available</p>
+                    ) : (
+                      inventory.map(product => (
+                        <div
+                          key={product.id}
+                          className="flex items-center gap-3 p-2 rounded hover:bg-muted/50 cursor-pointer transition-colors"
+                          onClick={() => {
+                            const newSet = new Set(selectedProductIds)
+                            if (newSet.has(product.id)) {
+                              newSet.delete(product.id)
+                            } else {
+                              newSet.add(product.id)
+                            }
+                            setSelectedProductIds(newSet)
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedProductIds.has(product.id)}
+                            onChange={() => {}}
+                            className="h-4 w-4 rounded cursor-pointer"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{product.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">SKU: {product.code} • Cost: ₱{product.minPrice.toFixed(2)}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-xs font-semibold text-muted-foreground">Margin: {product.profitMargin.toFixed(1)}%</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">{selectedProductIds.size} product(s) selected</p>
+              </div>
+
+              {/* Profit Margin Input */}
+              <div className="space-y-2">
+                <Label htmlFor="profit-margin" className="text-sm font-semibold">
+                  New Profit Margin (%)
+                </Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="profit-margin"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={bulkProfitMargin}
+                    onChange={(e) => setBulkProfitMargin(e.target.value)}
+                    placeholder="e.g., 30"
+                    className="rounded-lg"
+                  />
+                  <span className="text-sm font-semibold text-muted-foreground">%</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Example: If cost is ₱10 and margin is 30%, SRP will be ₱13
+                </p>
+              </div>
+
+              {/* Preview */}
+              {selectedProductIds.size > 0 && bulkProfitMargin && (
+                <div className="bg-muted/30 rounded-lg p-3 space-y-2 border border-muted">
+                  <p className="text-xs font-semibold text-foreground">Preview:</p>
+                  <div className="space-y-1">
+                    {Array.from(selectedProductIds)
+                      .map(id => inventory.find(p => p.id === id))
+                      .filter(Boolean)
+                      .slice(0, 3)
+                      .map(product => {
+                        const margin = parseFloat(bulkProfitMargin)
+                        const newSrp = product!.minPrice * (1 + margin / 100)
+                        return (
+                          <div key={product!.id} className="text-xs text-muted-foreground">
+                            <span className="font-medium">{product!.name}:</span> ₱{product!.minPrice.toFixed(2)} → ₱{newSrp.toFixed(2)}
+                          </div>
+                        )
+                      })}
+                    {selectedProductIds.size > 3 && (
+                      <p className="text-xs text-muted-foreground italic">+{selectedProductIds.size - 3} more products...</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-2">
+                <Button
+                  onClick={handleBulkProfitUpdate}
+                  disabled={isBulkUpdating || selectedProductIds.size === 0 || !bulkProfitMargin}
+                  className="flex-1 bg-primary hover:bg-primary/90 rounded-lg"
+                >
+                  {isBulkUpdating ? 'Updating...' : 'Apply to Selected Products'}
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowBulkProfitModal(false)
+                    setSelectedProductIds(new Set())
+                    setBulkProfitMargin('')
+                  }}
+                  variant="outline"
+                  disabled={isBulkUpdating}
+                  className="rounded-lg"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Product Distribution Modal ── */}
+      {showDistributionModal && (distributionProduct || distributionProducts.length > 0) && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <Card className="w-full max-w-2xl shadow-lg rounded-2xl">
+            <CardHeader className="border-b pb-4">
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5" />
+                Distribute: {distributionProducts.length > 0 ? `${distributionProducts.length} product(s)` : distributionProduct?.name}
+              </CardTitle>
+              {distributionProducts.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {distributionProducts.map(p => (
+                    <div key={p.id} className="inline-flex items-center gap-1 px-3 py-1 bg-primary/10 text-primary rounded-lg text-xs font-medium">
+                      {p.name}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-sm text-muted-foreground mt-2">Select which cashiers can access {distributionProducts.length > 0 ? 'these products' : 'this product'}</p>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-6">
+              {isLoadingCashiers ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin h-5 w-5 text-primary" />
+                </div>
+              ) : cashiers.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">No cashiers available</p>
+              ) : (
+                <div className="border rounded-lg max-h-72 overflow-y-auto">
+                  <div className="space-y-1 p-2">
+                    {cashiers.map(cashier => (
+                      <div
+                        key={cashier.id}
+                        className="flex items-center gap-3 p-3 rounded hover:bg-muted/50 cursor-pointer transition-colors"
+                        onClick={() => {
+                          const newSet = new Set(selectedCashiers)
+                          if (newSet.has(cashier.id)) {
+                            newSet.delete(cashier.id)
+                          } else {
+                            newSet.add(cashier.id)
+                          }
+                          setSelectedCashiers(newSet)
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedCashiers.has(cashier.id)}
+                          onChange={() => {}}
+                          className="h-4 w-4 rounded cursor-pointer"
+                        />
+                        <span className="text-sm font-medium flex-1">{cashier.email}</span>
+                        {selectedCashiers.has(cashier.id) && (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-muted/30 rounded-lg p-3 border border-muted">
+                <p className="text-xs font-semibold text-foreground">
+                  {selectedCashiers.size} of {cashiers.length} cashier(s) selected
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-2">
+                <Button
+                  onClick={handleDistributeProduct}
+                  disabled={isDistributing}
+                  className="flex-1 bg-primary hover:bg-primary/90 rounded-lg"
+                >
+                  {isDistributing ? 'Distributing...' : 'Confirm Distribution'}
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowDistributionModal(false)
+                    setDistributionProduct(null)
+                    setSelectedCashiers(new Set())
+                  }}
+                  variant="outline"
+                  disabled={isDistributing}
+                  className="rounded-lg"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Product Selector Modal (for Distribute from toolbar) ── */}
+      {showProductSelector && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <Card className="w-full max-w-md shadow-lg rounded-2xl">
+            <CardHeader className="border-b pb-4">
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5" />
+                Select Products to Distribute
+              </CardTitle>
+              {selectedDistributionProducts.size > 0 && (
+                <p className="text-sm text-primary mt-2 font-medium">{selectedDistributionProducts.size} product(s) selected</p>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-4 pt-6">
+              <Input
+                placeholder="Search products..."
+                value={distributionSearch}
+                onChange={(e) => setDistributionSearch(e.target.value)}
+                className="rounded-lg"
+              />
+              <div className="max-h-64 overflow-y-auto space-y-2">
+                {inventory
+                  .filter(p => 
+                    p.name.toLowerCase().includes(distributionSearch.toLowerCase()) ||
+                    p.code.toLowerCase().includes(distributionSearch.toLowerCase())
+                  )
+                  .map(product => {
+                    const isSelected = selectedDistributionProducts.has(product.id)
+                    return (
+                      <button
+                        key={product.id}
+                        onClick={() => {
+                          const newSet = new Set(selectedDistributionProducts)
+                          if (newSet.has(product.id)) {
+                            newSet.delete(product.id)
+                          } else {
+                            newSet.add(product.id)
+                          }
+                          setSelectedDistributionProducts(newSet)
+                        }}
+                        className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
+                          isSelected
+                            ? 'border-primary/50 bg-primary/10'
+                            : 'border-transparent hover:border-primary/30 hover:bg-primary/5'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3 flex-1">
+                            <div className={`h-5 w-5 rounded border-2 flex items-center justify-center transition-colors ${
+                              isSelected
+                                ? 'border-primary bg-primary'
+                                : 'border-muted-foreground'
+                            }`}>
+                              {isSelected && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
+                            </div>
+                            <div>
+                              <p className="font-medium text-sm">{product.name}</p>
+                              <p className="text-xs text-muted-foreground">{product.code}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs font-semibold text-primary">₱{product.minPrice.toFixed(2)}</p>
+                          </div>
+                        </div>
+                      </button>
+                    )
+                  })}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    if (selectedDistributionProducts.size === 0) {
+                      toast.error('Please select at least one product')
+                      return
+                    }
+                    const selectedProducts = inventory.filter(p => selectedDistributionProducts.has(p.id))
+                    setDistributionProducts(selectedProducts)
+                    setDistributionProduct(null)
+                    setShowDistributionModal(true)
+                    setShowProductSelector(false)
+                    setDistributionSearch('')
+                    setSelectedCashiers(new Set())
+                  }}
+                  className="flex-1 rounded-lg"
+                  disabled={selectedDistributionProducts.size === 0}
+                >
+                  Distribute Selected
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowProductSelector(false)
+                    setDistributionSearch('')
+                    setSelectedDistributionProducts(new Set())
+                  }}
+                  variant="outline"
+                  className="flex-1 rounded-lg"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   )

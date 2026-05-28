@@ -8,9 +8,16 @@ const { productController } = require('./product.controller')
 const productRouter = Router()
 
 productRouter.use(requireAuth)
+
+// Product distribution routes (admin only) - must come before /:id routes
+productRouter.get('/cashiers/list', requireRole('admin'), productController.getCashiers)
+
+// General product routes
 productRouter.get('/', productController.index)
 productRouter.post('/', requireRole('admin'), productController.store)
 productRouter.put('/:id', requireRole('admin'), productController.update)
 productRouter.delete('/:id', requireRole('admin'), productController.destroy)
+productRouter.get('/:id/cashiers', requireRole('admin'), productController.getCashiersForProduct)
+productRouter.post('/:id/assign-cashiers', requireRole('admin'), productController.assignProductToCashiers)
 
 module.exports = { productRouter }

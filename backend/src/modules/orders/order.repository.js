@@ -24,7 +24,7 @@ const orderRepository = {
 
   async findProductsByIds(client, ids) {
     const result = await client.query(
-      `SELECT id, name, sku, price::text, quantity
+      `SELECT id, name, sku, price::text, srp_price::text, quantity
        FROM products
        WHERE id = ANY($1::int[])
        FOR UPDATE`,

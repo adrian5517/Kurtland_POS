@@ -3,13 +3,24 @@ const { productService } = require('./product.service')
 const productController = {
   async index(_req, res, next) {
     try {
-      const products = await productService.listProducts()
+      const userId = _req.user?.id
+      const userRole = _req.user?.role
+
+      // Fetch products based on user role
+      let products = await productService.listProducts()
+
+      // If user is a cashier, filter to only assigned products
+      if (userRole === 'cashier' && userId) {
+        const assignedProducts = await productService.getProductsByCashier(userId)
+        products = products.filter(p => assignedProducts.some(ap => ap.id === p.id))
+      }
+
       const enrichedProducts = products.map((product) => {
         const sellingPrice = Number(product.srp_price ?? product.srpPrice ?? 0)
         const costPrice = Number(product.price ?? 0)
         const profit = sellingPrice - costPrice
-        const profitMargin = sellingPrice > 0
-          ? Number(((profit / sellingPrice) * 100).toFixed(2))
+        const profitMargin = costPrice > 0
+          ? Number(((profit / costPrice) * 100).toFixed(2))
           : 0
 
         return {
@@ -62,6 +73,51 @@ const productController = {
       }
       await productService.deleteProduct(id)
       return res.status(204).send()
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async getCashiers(_req, res, next) {
+    try {
+      console.log('📡 [API] GET /api/products/cashiers/list - Fetching all cashiers')
+      const cashiers = await productService.getAllCashiers()
+      console.log('📡 [API] Found cashiers:', cashiers)
+      return res.json({ data: cashiers })
+    } catch (error) {
+      console.error('❌ [API] Error fetching cashiers:', error)
+      next(error)
+    }
+  },
+
+  async getCashiersForProduct(req, res, next) {
+    try {
+      const productId = Number(req.params.id)
+      if (!Number.isInteger(productId) || productId <= 0) {
+        return res.status(400).json({ error: 'Invalid product ID' })
+      }
+      const cashierIds = await productService.getCashiersForProduct(productId)
+      return res.json({ data: cashierIds })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async assignProductToCashiers(req, res, next) {
+    try {
+      const productId = Number(req.params.id)
+      const { cashierIds } = req.body
+
+      if (!Number.isInteger(productId) || productId <= 0) {
+        return res.status(400).json({ error: 'Invalid product ID' })
+      }
+
+      if (!Array.isArray(cashierIds)) {
+        return res.status(400).json({ error: 'cashierIds must be an array' })
+      }
+
+      const result = await productService.assignProductToCashiers(productId, cashierIds)
+      return res.json({ data: result, message: 'Product assigned to cashiers' })
     } catch (error) {
       next(error)
     }
