@@ -379,6 +379,8 @@ export default function POSDashboard() {
   const [showProductSelector, setShowProductSelector] = useState(false)
   const [mobileCartExpanded, setMobileCartExpanded] = useState(false)
   const [showInactiveProducts, setShowInactiveProducts] = useState(false)
+  // Ref for the mobile cart drawer — used to auto-scroll to newest item
+  const drawerRef = useRef<HTMLDivElement>(null)
 
   // ── Data ─────────────────────────────────────────────────────────────────────
   const {
@@ -390,6 +392,26 @@ export default function POSDashboard() {
   } = useProducts()
 
   const { cart, addToCart, removeFromCart, updateQuantity, clearCart } = useCart(products)
+
+  // ── Derived cart values ───────────────────────────────────────────────────────
+  const cartItemCount = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart])
+  const cartTotal = useMemo(() => cart.reduce((sum, item) => sum + item.subtotal, 0), [cart])
+
+  // ── Auto-expand / collapse mobile cart ───────────────────────────────────────
+  useEffect(() => {
+    if (cart.length === 1) setMobileCartExpanded(true)  // expand when first item added
+    if (cart.length === 0) setMobileCartExpanded(false) // collapse when cart cleared
+  }, [cart.length])
+
+  // After the drawer height transitions (300ms), scroll it to show the newest item
+  // and the checkout footer. Safe no-op on desktop (drawerRef targets mobile-only element).
+  useEffect(() => {
+    if (!mobileCartExpanded || cart.length === 0) return
+    const id = setTimeout(() => {
+      drawerRef.current?.scrollTo({ top: drawerRef.current.scrollHeight, behavior: 'smooth' })
+    }, 320)
+    return () => clearTimeout(id)
+  }, [cart.length, mobileCartExpanded])
 
   // ── Derived data ─────────────────────────────────────────────────────────────
 
@@ -477,8 +499,8 @@ export default function POSDashboard() {
             'rounded-3xl border border-border/50 bg-background/80',
             'p-4 shadow-sm backdrop-blur-sm sm:p-5 lg:p-6',
             mobileCartExpanded
-              ? 'pb-[33rem] sm:pb-[35rem]'
-              : 'pb-[18.5rem] sm:pb-[19.5rem]',
+              ? 'pb-[95dvh]'
+              : 'pb-20',
             'lg:pb-6',
           ].join(' ')}
           initial={{ opacity: 0, y: 12 }}
@@ -606,7 +628,7 @@ export default function POSDashboard() {
 
         {/* ── Desktop cart sidebar ── */}
         <motion.aside
-          className="hidden min-h-0 min-w-0 flex-col gap-3 lg:flex xl:sticky xl:top-0 xl:self-start xl:max-h-[calc(100vh-8rem)] 2xl:gap-4"
+          className="hidden min-h-0 min-w-0 flex-col gap-3 lg:flex xl:sticky xl:top-0 xl:self-start xl:h-[calc(100vh-8rem)] 2xl:gap-4"
           initial={{ opacity: 0, x: 16 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.45, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
@@ -617,30 +639,63 @@ export default function POSDashboard() {
             onUpdateQuantity={updateQuantity}
             onCheckout={handleCheckout}
             onClearCart={clearCart}
+            className="flex-1 min-h-0"
           />
         </motion.aside>
       </div>
 
       {/* ── Mobile cart drawer ── */}
-      <div className="fixed inset-x-0 bottom-0 z-40 px-3 pb-3 lg:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-40 lg:hidden">
         <div
+          ref={drawerRef}
           className={[
-            'overflow-hidden rounded-t-3xl border border-border/50',
-            'bg-card/95 shadow-2xl shadow-black/10 backdrop-blur-md',
-            'transition-[height] duration-300',
-            mobileCartExpanded ? 'h-[70vh]' : 'h-[42vh]',
+            'overflow-y-auto overflow-x-hidden rounded-t-3xl border-x border-t border-border/50',
+            'bg-card/98 shadow-2xl shadow-black/15 backdrop-blur-md',
+            'transition-[height] duration-300 ease-in-out',
           ].join(' ')}
+          // Height formula (measured at compact density):
+          //   handle 56 + cart-header 56 + items-padding 20 + footer 284 = 416 base
+          //   each item row: name(32) + qty(28) + p-2(16) + gap(8)      = 84 per item
+          // Items always visible; drawer itself scrolls when > 95dvh (4+ items on small phones).
+          // The sticky handle stays visible regardless of scroll position.
+          style={{
+            height:
+              !mobileCartExpanded || cart.length === 0
+                ? '3.5rem'
+                : `min(${416 + cart.length * 84}px, 95dvh)`,
+          }}
         >
-          {/* Drag handle */}
-          <div className="flex items-center justify-center border-b border-border/50 py-1.5">
-            <button
-              type="button"
-              onClick={() => setMobileCartExpanded((v) => !v)}
-              className="h-1.5 w-12 rounded-full bg-muted-foreground/30"
-              aria-label={mobileCartExpanded ? 'Collapse cart' : 'Expand cart'}
-            />
-          </div>
+          {/* Summary handle — tappable bar showing count + total */}
+          <button
+            type="button"
+            onClick={() => cart.length > 0 && setMobileCartExpanded((v) => !v)}
+            className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b border-border/40 w-full text-left active:bg-muted/40 bg-card/98 backdrop-blur-md transition-colors"
+            aria-label={mobileCartExpanded ? 'Collapse cart' : 'Expand cart'}
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="h-7 w-7 rounded-xl bg-primary/10 flex items-center justify-center">
+                <ShoppingBag className="h-3.5 w-3.5 text-primary" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-foreground leading-none">
+                  {cart.length > 0 ? `${cartItemCount} item${cartItemCount !== 1 ? 's' : ''}` : 'Current Order'}
+                </p>
+                {cart.length > 0 && (
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    {mobileCartExpanded ? 'Tap to collapse' : 'Tap to expand'}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              {cart.length > 0 && (
+                <span className="text-sm font-black text-primary tabular-nums">₱{cartTotal.toFixed(2)}</span>
+              )}
+              <div className="h-1 w-8 rounded-full bg-muted-foreground/25" />
+            </div>
+          </button>
 
+          {/* Cart renders at its natural height — no h-full, no wrapper */}
           <POSCart
             items={cart}
             onRemoveItem={removeFromCart}

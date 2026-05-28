@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -59,6 +59,14 @@ export default function POSCart({
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
   const change = Math.max(amountPaid - total, 0)
 
+  // Scroll to the newest item (bottom) whenever the item list grows
+  const itemsScrollRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (itemsScrollRef.current && items.length > 0) {
+      itemsScrollRef.current.scrollTop = itemsScrollRef.current.scrollHeight
+    }
+  }, [items.length])
+
   useEffect(() => {
     setAmountPaid((currentAmountPaid) => {
       if (currentAmountPaid < total) {
@@ -96,8 +104,10 @@ export default function POSCart({
   return (
     <>
       <Card
-        className={`flex flex-col border-border/50 bg-card shadow-sm overflow-hidden ${
-          compact ? 'h-full min-h-0 rounded-t-3xl rounded-b-none border-b-0' : 'h-full min-h-[28rem] rounded-3xl'
+        className={`flex flex-col border-border/50 bg-card shadow-sm ${
+          compact
+            ? 'rounded-t-3xl rounded-b-none border-b-0'          // drawer owns overflow
+            : 'rounded-3xl min-h-[28rem] overflow-hidden'         // desktop sidebar clips
         } ${className ?? ''}`}
       >
         {/* Header */}
@@ -129,9 +139,22 @@ export default function POSCart({
           </div>
         </CardHeader>
 
-        <CardContent className="flex-1 flex flex-col p-0 min-h-0 overflow-hidden">
+        <CardContent
+          className={
+            compact
+              ? 'flex flex-col p-0'                              // natural height — no overflow
+              : 'flex-1 flex flex-col p-0 min-h-0 overflow-hidden' // desktop: scrollable
+          }
+        >
           {/* Cart Items */}
-          <div className={`${compact ? 'flex-1 overflow-y-auto px-3 py-2.5 space-y-2 min-h-0' : 'flex-1 overflow-y-auto px-4 py-4 space-y-3 min-h-0'}`}>
+          <div
+            ref={itemsScrollRef}
+            className={
+              compact
+                ? 'px-3 py-2.5 space-y-2'                           // natural height, no scroll
+                : 'flex-1 overflow-y-auto px-4 py-4 space-y-3 min-h-0' // desktop: scrollable
+            }
+          >
             <AnimatePresence initial={false}>
               {items.length === 0 ? (
                 <motion.div
