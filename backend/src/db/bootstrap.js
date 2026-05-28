@@ -1,3 +1,4 @@
+const bcrypt = require('bcryptjs')
 const { db } = require('./pool')
 
 const STARTER_PRODUCTS = [
@@ -139,5 +140,38 @@ async function bootstrapDatabase() {
       ON CONFLICT (prefix) DO UPDATE
       SET last_value = GREATEST(sku_counters.last_value, EXCLUDED.last_value)
     `)
+
+  // Seed demo users
+  const adminPasswordHash = await bcrypt.hash('admin', 10)
+  const cashierPasswordHash = await bcrypt.hash('cashier123', 10)
+
+  // Check if admin user exists
+  const { rows: adminRows } = await db.query('SELECT id FROM users WHERE email = $1', ['admin@kurtland.com'])
+  if (adminRows.length === 0) {
+    await db.query(
+      `INSERT INTO users (email, password_hash, name, role)
+       VALUES ($1, $2, $3, $4)`,
+      ['admin@kurtland.com', adminPasswordHash, 'System Admin', 'admin'],
+    )
+    console.log('✓ Seeded admin user: admin@kurtland.com / password: admin')
+  }
+
+  // Check if cashier users exist
+  const { rows: cashierRows } = await db.query('SELECT id FROM users WHERE role = $1', ['cashier'])
+  if (cashierRows.length === 0) {
+    const cashierAccounts = [
+      { email: 'cashier1@kurtland.com', name: 'Cashier One' },
+      { email: 'cashier2@kurtland.com', name: 'Cashier Two' },
+    ]
+
+    for (const { email, name } of cashierAccounts) {
+      await db.query(
+        `INSERT INTO users (email, password_hash, name, role)
+         VALUES ($1, $2, $3, $4)`,
+        [email, cashierPasswordHash, name, 'cashier'],
+      )
+      console.log(`✓ Seeded cashier user: ${email} / password: cashier123`)
+    }
+  }
 }
 module.exports = { bootstrapDatabase }

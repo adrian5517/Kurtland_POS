@@ -601,9 +601,24 @@ export default function InventoryPage() {
     }
   }
 
-  const openDistributionModal = async (product: InventoryItem) => {
-    console.log('🔄 Opening distribution modal for:', product.name)
-    setDistributionProduct(product)
+  // Log when product selector modal opens/closes
+  useEffect(() => {
+    console.log('🎪 Product selector modal:', showProductSelector ? 'OPENED' : 'closed')
+  }, [showProductSelector])
+
+  // Log when distribution modal opens/closes
+  useEffect(() => {
+    if (showDistributionModal) {
+      console.log('🎬 Distribution modal OPENED', {
+        hasProduct: !!distributionProduct?.name,
+        hasProducts: distributionProducts.length,
+        productNames: distributionProducts.map(p => p.name)
+      })
+    }
+  }, [showDistributionModal])
+
+  const fetchCashiers = useCallback(async () => {
+    console.log('🔄 Fetching cashiers for distribution...')
     setIsLoadingCashiers(true)
     setSelectedCashiers(new Set())
 
@@ -653,28 +668,28 @@ export default function InventoryPage() {
         console.error('❌ Failed to fetch cashiers:', { status: cashierResponse.status, data: cashierData })
         toast.error(`Failed to load cashiers: ${cashierResponse.status}`)
       }
-
-      console.log('📡 Fetching assigned cashiers for product', product.id)
-      // Load cashiers already assigned to this product
-      const assignedResponse = await apiFetch(`/api/products/${product.id}/cashiers`, {
-        headers,
-      })
-      const assignedData = await assignedResponse.json()
-      console.log('✓ Assigned response:', { ok: assignedResponse.ok, data: assignedData })
-      if (assignedResponse.ok) {
-        setSelectedCashiers(new Set(assignedData.data || []))
-      } else {
-        console.error('❌ Failed to fetch assigned cashiers:', assignedData)
-      }
-
-      console.log('✓ Showing distribution modal')
-      setShowDistributionModal(true)
     } catch (error) {
-      console.error('❌ Error in openDistributionModal:', error)
+      console.error('❌ Error fetching cashiers:', error)
       toast.error('Failed to load cashiers')
+      setCashiers([])
     } finally {
       setIsLoadingCashiers(false)
     }
+  }, [toast])
+
+  // Fetch cashiers when distribution modal opens
+  useEffect(() => {
+    if (showDistributionModal) {
+      fetchCashiers()
+    }
+  }, [showDistributionModal, fetchCashiers])
+
+  const openDistributionModal = async (product: InventoryItem) => {
+    console.log('🔄 Opening distribution modal for:', product.name)
+    setDistributionProduct(product)
+    setDistributionProducts([product])
+    setShowDistributionModal(true)
+    // cashiers will be fetched by useEffect
   }
 
   const handleDistributeProduct = async () => {
@@ -768,6 +783,7 @@ export default function InventoryPage() {
           {isAdmin && (
             <Button
               onClick={() => {
+                console.log('🎯 Distribute button clicked (from toolbar)')
                 setShowProductSelector(true)
                 setDistributionSearch('')
               }}
@@ -1598,11 +1614,13 @@ export default function InventoryPage() {
               <div className="flex gap-2">
                 <Button
                   onClick={() => {
+                    console.log('🔷 Distribute Selected button clicked, selectedDistributionProducts:', Array.from(selectedDistributionProducts))
                     if (selectedDistributionProducts.size === 0) {
                       toast.error('Please select at least one product')
                       return
                     }
                     const selectedProducts = inventory.filter(p => selectedDistributionProducts.has(p.id))
+                    console.log('📋 Selected products to distribute:', selectedProducts.map(p => p.name))
                     setDistributionProducts(selectedProducts)
                     setDistributionProduct(null)
                     setShowDistributionModal(true)
