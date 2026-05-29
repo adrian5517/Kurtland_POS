@@ -369,6 +369,8 @@ export default function BudgetRequestsPage() {
       setIsReviewingReturn(false)
     }
   }
+
+  return (
     <div className="w-full max-w-none space-y-6 animate-in fade-in duration-300">
 
       {/* ── Header ── */}

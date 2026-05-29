@@ -68,47 +68,70 @@ function buildPrintDocument(data: Omit<ReceiptProps, 'onClose'> & { logoUrl: str
   <title>Receipt — ${data.transactionId}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    @page {
+      size: 80mm auto;
+      margin: 3mm 4mm;
+    }
+
     body {
       font-family: 'Courier New', Courier, monospace;
+      font-size: 11px;
+      line-height: 1.4;
       background: #fff;
-      color: #111;
-      padding: 24px;
+      color: #000;
+      width: 72mm;
+      margin: 0 auto;
+      padding: 4mm 0 2mm;
     }
-    .wrap { max-width: 340px; margin: 0 auto; }
+
+    .wrap { width: 100%; }
+
     .center { text-align: center; }
-    .right { text-align: right; }
-    .bold { font-weight: 700; }
+    .right  { text-align: right; }
+    .bold   { font-weight: 700; }
+
     /* Header */
-    .header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-    .header-logo { width: 64px; height: 64px; object-fit: contain; flex-shrink: 0; }
+    .header { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+    .header-logo { width: 48px; height: 48px; object-fit: contain; flex-shrink: 0; }
     .header-text { text-align: center; flex: 1; }
-    .store-name { font-size: 20px; font-weight: 700; letter-spacing: 3px; margin-bottom: 2px; }
-    .store-sub  { font-size: 10px; color: #666; }
+    .store-name { font-size: 13px; font-weight: 700; letter-spacing: 2px; margin-bottom: 1px; }
+    .store-sub  { font-size: 9px; color: #555; }
+
     /* Dividers */
-    .dash { border: none; border-top: 1px dashed #aaa; margin: 10px 0; }
+    .dash { border: none; border-top: 1px dashed #888; margin: 6px 0; }
+
     /* Metadata rows */
-    .meta { display: flex; justify-content: space-between; font-size: 11px; color: #555; margin: 3px 0; }
-    .meta span:last-child { font-weight: 600; color: #111; text-align: right; max-width: 60%; }
+    .meta { display: flex; justify-content: space-between; font-size: 10px; color: #444; margin: 2px 0; }
+    .meta span:last-child { font-weight: 600; color: #000; text-align: right; max-width: 62%; word-break: break-word; }
+
     /* Section label */
-    .label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #999; margin: 10px 0 4px; }
+    .label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #777; margin: 7px 0 3px; }
+
     /* Items table */
-    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 10px; }
     thead th {
-      font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
-      color: #888; padding: 3px 0; border-bottom: 1px solid #ddd;
+      font-size: 9px; text-transform: uppercase; letter-spacing: 0.4px;
+      color: #666; padding: 2px 0; border-bottom: 1px solid #ccc;
     }
     thead th:nth-child(1) { text-align: left; }
     thead th:nth-child(2), thead th:nth-child(3), thead th:nth-child(4) { text-align: right; }
-    td { padding: 5px 0; border-bottom: 1px solid #eee; vertical-align: top; }
-    td.item-name { text-align: left; padding-right: 6px; }
+    td { padding: 3px 0; border-bottom: 1px dotted #ddd; vertical-align: top; }
+    td.item-name { text-align: left; padding-right: 4px; max-width: 28mm; word-break: break-word; }
     td.center { text-align: center; }
+
     /* Totals */
-    .total-row  { display: flex; justify-content: space-between; font-size: 12px; margin: 4px 0; }
-    .grand      { display: flex; justify-content: space-between; font-size: 18px; font-weight: 700; margin: 8px 0 4px; }
-    .change-row { display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; color: #16a34a; margin: 4px 0; }
+    .total-row  { display: flex; justify-content: space-between; font-size: 11px; margin: 3px 0; }
+    .grand      { display: flex; justify-content: space-between; font-size: 15px; font-weight: 700; margin: 6px 0 3px; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 3px 0; }
+    .change-row { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; margin: 3px 0; }
+
     /* Footer */
-    .footer { text-align: center; font-size: 11px; color: #888; margin-top: 14px; line-height: 1.6; }
-    @media print { body { padding: 0; } }
+    .footer { text-align: center; font-size: 10px; color: #666; margin-top: 10px; line-height: 1.7; }
+    .footer .tagline { font-size: 9px; letter-spacing: 2px; margin-top: 5px; color: #999; }
+
+    @media print {
+      body { padding: 0; }
+    }
   </style>
 </head>
 <body>
@@ -145,7 +168,7 @@ function buildPrintDocument(data: Omit<ReceiptProps, 'onClose'> & { logoUrl: str
     <div class="footer">
       <p>Thank you for your purchase!</p>
       <p>Please come again.</p>
-      <p style="margin-top:8px;letter-spacing:3px">✦ KEEP YOUR RECEIPT ✦</p>
+      <p class="tagline">✦ KEEP YOUR RECEIPT ✦</p>
     </div>
   </div>
 </body>
@@ -168,7 +191,7 @@ export default function Receipt({
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   function handlePrint() {
-    const win = window.open('', '_blank', 'width=480,height=700')
+    const win = window.open('', '_blank', 'width=320,height=600')
     if (!win) {
       toast.error('Pop-ups are blocked — please allow them to print')
       return
