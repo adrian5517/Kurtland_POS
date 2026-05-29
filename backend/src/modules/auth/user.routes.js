@@ -7,8 +7,9 @@ const userRouter = Router()
 
 const adminOnly = [requireAuth, requireRole('admin')]
 
-// Any authenticated user: change own password (must come before /:id routes)
+// Any authenticated user: change own password / update own profile (must come before /:id routes)
 userRouter.patch('/me/password', requireAuth, userController.changeOwnPassword)
+userRouter.patch('/me', requireAuth, userController.updateOwnProfile)
 
 // Admin-only: manage all users
 userRouter.get('/', ...adminOnly, userController.list)

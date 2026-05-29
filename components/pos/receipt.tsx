@@ -79,8 +79,11 @@ function buildPrintDocument(data: Omit<ReceiptProps, 'onClose'> & { logoUrl: str
     .right { text-align: right; }
     .bold { font-weight: 700; }
     /* Header */
-    .store-name { font-size: 22px; font-weight: 700; letter-spacing: 3px; margin-bottom: 3px; }
-    .store-sub  { font-size: 11px; color: #666; }
+    .header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+    .header-logo { width: 64px; height: 64px; object-fit: contain; flex-shrink: 0; }
+    .header-text { text-align: center; flex: 1; }
+    .store-name { font-size: 20px; font-weight: 700; letter-spacing: 3px; margin-bottom: 2px; }
+    .store-sub  { font-size: 10px; color: #666; }
     /* Dividers */
     .dash { border: none; border-top: 1px dashed #aaa; margin: 10px 0; }
     /* Metadata rows */
@@ -110,10 +113,12 @@ function buildPrintDocument(data: Omit<ReceiptProps, 'onClose'> & { logoUrl: str
 </head>
 <body>
   <div class="wrap">
-    <div class="center">
-      <img src="${data.logoUrl}" alt="Kurtland logo" style="display:block;margin:0 auto 6px;width:72px;height:72px;object-fit:contain" />
-      <p class="store-name">KURTLAND</p>
-      <p class="store-sub">Canteen Management System</p>
+    <div class="header">
+      <img src="${data.logoUrl}" alt="Kurtland logo" class="header-logo" />
+      <div class="header-text">
+        <p class="store-name">KURTLAND</p>
+        <p class="store-sub">Canteen Management System</p>
+      </div>
     </div>
     <hr class="dash" />
     <div class="meta"><span>Transaction</span><span>${data.transactionId}</span></div>
@@ -258,7 +263,7 @@ export default function Receipt({
                 className="mx-auto object-contain mb-1"
                 priority
               />
-              <h2 className="text-lg font-black tracking-[0.2em] text-gray-900">KURTLAND</h2>
+              <h2 className="text-md font-black tracking-[0.2em] text-gray-900">KURTLAND GRADESCHOOL INC.</h2>
               <p className="text-[10px] text-gray-400 tracking-wider uppercase mt-0.5">
                 Canteen Management System
               </p>

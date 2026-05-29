@@ -113,6 +113,24 @@ const userService = {
     await userRepository.delete(targetId)
   },
 
+  async updateOwnProfile(requesterId, { name, email }) {
+    const trimmedName = String(name || '').trim()
+    const trimmedEmail = String(email || '').trim().toLowerCase()
+
+    if (!trimmedName) throw new HttpError(400, 'Name is required')
+    if (!trimmedEmail) throw new HttpError(400, 'Email is required')
+    if (!validateEmail(trimmedEmail)) throw new HttpError(400, 'Invalid email format')
+
+    const existing = await userRepository.findByEmail(trimmedEmail)
+    if (existing && existing.id !== requesterId) {
+      throw new HttpError(409, 'Email is already in use by another account')
+    }
+
+    const user = await userRepository.updateProfile(requesterId, { name: trimmedName, email: trimmedEmail })
+    if (!user) throw new HttpError(404, 'User not found')
+    return toSafeUser(user)
+  },
+
   async changeOwnPassword(requesterId, { currentPassword, newPassword }) {
     const hash = await userRepository.getPasswordHash(requesterId)
     if (!hash) throw new HttpError(404, 'User not found')

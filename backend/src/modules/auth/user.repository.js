@@ -47,6 +47,16 @@ const userRepository = {
     return result.rows[0] || null
   },
 
+  async updateProfile(id, { name, email }) {
+    const result = await db.query(
+      `UPDATE users SET name = $2, email = $3
+       WHERE id = $1
+       RETURNING id, email, name, role, is_active, created_at`,
+      [id, name, email],
+    )
+    return result.rows[0] || null
+  },
+
   async setActiveStatus(id, isActive) {
     const result = await db.query(
       `UPDATE users SET is_active = $2

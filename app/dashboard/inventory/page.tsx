@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState, useMemo } from 'react'
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,8 +10,16 @@ import {
   Plus, Edit2, Trash2, Search, Package, AlertTriangle, Layers, X,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ArrowUpDown,
   ArrowUp, ArrowDown, Filter, RefreshCw, TrendingDown, ShieldAlert,
-  CheckCircle2, SlidersHorizontal, EyeOff, Eye, TrendingUp, BarChart3
+  CheckCircle2, SlidersHorizontal, EyeOff, Eye, TrendingUp, BarChart3,
+  Check, UserMinus, Users, MoreHorizontal
 } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import ProductForm from '@/components/inventory/product-form'
 import ProductEditForm from '@/components/inventory/product-edit-form'
 import StockWarning from '@/components/inventory/stock-warning'
@@ -262,6 +270,10 @@ export default function InventoryPage() {
   const [selectedCashiers, setSelectedCashiers] = useState<Set<number>>(new Set())
   const [isLoadingCashiers, setIsLoadingCashiers] = useState(false)
   const [isDistributing, setIsDistributing] = useState(false)
+
+  // Manage assignments — tracks current cashier assignments for undistribute UX
+  const [currentAssignments, setCurrentAssignments] = useState<Set<number>>(new Set())
+  const managedProductIdRef = useRef<string | null>(null)
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
@@ -618,58 +630,45 @@ export default function InventoryPage() {
   }, [showDistributionModal])
 
   const fetchCashiers = useCallback(async () => {
-    console.log('🔄 Fetching cashiers for distribution...')
     setIsLoadingCashiers(true)
     setSelectedCashiers(new Set())
+    setCurrentAssignments(new Set())
 
     const session = getAuthSession()
-    console.log('🔐 Session for API call:', { 
-      hasToken: !!session?.token, 
-      tokenLength: session?.token?.length,
-      hasUser: !!session?.user,
-      userRole: (session as any)?.user?.role
-    })
-    
     if (!session?.token) {
-      console.error('❌ No session token')
       toast.error('Please sign in again')
       setIsLoadingCashiers(false)
       return
     }
 
     try {
-      console.log('📡 Fetching cashiers from /api/products/cashiers/list')
       const headers = apiHeaders(session.token)
-      console.log('📡 Request headers:', {
-        'content-type': headers.get('Content-Type'),
-        'authorization': `Bearer ${headers.get('Authorization')?.substring(0, 20)}...`,
-      })
-      
+
       // Load all cashiers
       const cashierResponse = await apiFetch('/api/products/cashiers/list', {
         method: 'GET',
         headers,
       })
-      
-      console.log('📡 Cashier response status:', cashierResponse.status)
       const cashierData = await cashierResponse.json()
-      console.log('✓ Cashiers response:', { 
-        ok: cashierResponse.ok, 
-        status: cashierResponse.status,
-        data: cashierData,
-        dataArray: Array.isArray(cashierData?.data),
-        dataLength: cashierData?.data?.length
-      })
-      
+
       if (cashierResponse.ok) {
-        console.log('✓ Setting cashiers:', cashierData.data)
         setCashiers(cashierData.data || [])
       } else {
-        console.error('❌ Failed to fetch cashiers:', { status: cashierResponse.status, data: cashierData })
         toast.error(`Failed to load cashiers: ${cashierResponse.status}`)
       }
+
+      // In single-product manage mode: pre-load current assignments and pre-select them
+      const pid = managedProductIdRef.current
+      if (pid) {
+        const assignRes = await apiFetch(`/api/products/${pid}/cashiers`, { headers })
+        const assignData = await assignRes.json()
+        if (assignRes.ok && Array.isArray(assignData.data)) {
+          const assigned = new Set<number>(assignData.data)
+          setCurrentAssignments(assigned)
+          setSelectedCashiers(assigned)
+        }
+      }
     } catch (error) {
-      console.error('❌ Error fetching cashiers:', error)
       toast.error('Failed to load cashiers')
       setCashiers([])
     } finally {
@@ -684,13 +683,25 @@ export default function InventoryPage() {
     }
   }, [showDistributionModal, fetchCashiers])
 
-  const openDistributionModal = async (product: InventoryItem) => {
-    console.log('🔄 Opening distribution modal for:', product.name)
+  const openDistributionModal = (product: InventoryItem) => {
+    managedProductIdRef.current = product.id
     setDistributionProduct(product)
     setDistributionProducts([product])
     setShowDistributionModal(true)
-    // cashiers will be fetched by useEffect
+    // fetchCashiers (triggered by useEffect) will also pre-load current assignments via managedProductIdRef
   }
+
+  // ── Distribution modal derived state ──────────────────────────────────────
+  const isManageMode = distributionProducts.length === 1
+  const distributeDisplayName = isManageMode
+    ? (distributionProducts[0]?.name ?? distributionProduct?.name ?? 'Product')
+    : `${distributionProducts.length} products`
+  const distributeAddCount = isManageMode
+    ? Array.from(selectedCashiers).filter(id => !currentAssignments.has(id)).length
+    : selectedCashiers.size
+  const distributeRemoveCount = isManageMode
+    ? Array.from(currentAssignments).filter(id => !selectedCashiers.has(id)).length
+    : 0
 
   const handleDistributeProduct = async () => {
     const productsToDistribute = distributionProducts.length > 0 ? distributionProducts : (distributionProduct ? [distributionProduct] : [])
@@ -700,7 +711,7 @@ export default function InventoryPage() {
       return
     }
 
-    if (selectedCashiers.size === 0) {
+    if (selectedCashiers.size === 0 && !isManageMode) {
       toast.error('Please select at least one cashier')
       return
     }
@@ -740,14 +751,39 @@ export default function InventoryPage() {
       setDistributionProduct(null)
       setDistributionProducts([])
       setSelectedCashiers(new Set())
+      setCurrentAssignments(new Set())
+      managedProductIdRef.current = null
       const productsCount = productsToDistribute.length
       const productNames = productsCount === 1 ? productsToDistribute[0].name : `${productsCount} products`
-      toast.success(`✓ ${productNames} assigned to ${selectedCashiers.size} cashier(s)`)
+      toast.success(isManageMode
+        ? `✓ ${productNames} assignments updated`
+        : `✓ ${productNames} assigned to ${selectedCashiers.size} cashier(s)`)
     } catch (error) {
       console.error('❌ Error in handleDistributeProduct:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to distribute product')
     } finally {
       setIsDistributing(false)
+    }
+  }
+
+  const handleUndistributeCashier = async (productId: string, cashierId: number, cashierEmail: string) => {
+    const session = getAuthSession()
+    if (!session?.token) { toast.error('Please sign in again'); return }
+    try {
+      const res = await apiFetch(`/api/products/${productId}/cashiers/${cashierId}`, {
+        method: 'DELETE',
+        headers: apiHeaders(session.token),
+      })
+      if (res.status !== 204 && !res.ok) {
+        const body = await res.json().catch(() => null)
+        throw new Error(body?.message || 'Failed to remove assignment')
+      }
+      // Optimistic UI update
+      setCurrentAssignments(prev => { const n = new Set(prev); n.delete(cashierId); return n })
+      setSelectedCashiers(prev => { const n = new Set(prev); n.delete(cashierId); return n })
+      toast.success(`Removed ${cashierEmail} from this product`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to remove assignment')
     }
   }
 
@@ -1158,7 +1194,7 @@ export default function InventoryPage() {
                         </td>
 
                         {/* Actions */}
-                        <td className="px-5 py-3.5 text-center">
+                        <td className="px-4 py-3.5 text-center">
                           {restockingProduct === item.id ? (
                             <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                               <Input
@@ -1170,16 +1206,16 @@ export default function InventoryPage() {
                                 autoFocus
                                 min="1"
                               />
-                              <Button 
-                                size="sm" 
+                              <Button
+                                size="sm"
                                 className="h-8 px-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
                                 onClick={() => handleRestockSubmit(item.id, parseInt(restockQuantity, 10) || 0)}
                               >
                                 Add
                               </Button>
-                              <Button 
-                                size="sm" 
-                                variant="ghost" 
+                              <Button
+                                size="sm"
+                                variant="ghost"
                                 className="h-8 w-8 p-0"
                                 onClick={() => setRestockingProduct(null)}
                               >
@@ -1187,49 +1223,115 @@ export default function InventoryPage() {
                               </Button>
                             </div>
                           ) : (
-                            <div className="flex items-center justify-center gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-muted-foreground hover:text-emerald-600 rounded-lg transition-colors"
-                                onClick={() => {
-                                  setRestockingProduct(item.id)
-                                  setRestockQuantity('')
-                                }}
-                                title="Restock product"
-                              >
-                                <Plus className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-muted-foreground hover:text-foreground rounded-lg"
-                                onClick={() => setEditingProduct(item)}
-                                title="Edit product"
-                              >
-                                <Edit2 className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-muted-foreground hover:text-amber-600 rounded-lg"
-                                onClick={() => toggleProductActiveStatus(item)}
-                                title={item.isActive ? "Deactivate product" : "Activate product"}
-                              >
-                                {item.isActive ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-muted-foreground hover:text-destructive rounded-lg"
-                                onClick={() => {
-                                  if (confirm(`Delete ${item.name}?`)) handleDeleteProduct(item.id)
-                                }}
-                                title="Delete product"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
+                            <>
+                              {/* ── Large screen: full inline buttons ── */}
+                              <div className="hidden xl:flex items-center justify-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-muted-foreground hover:text-emerald-600 rounded-lg transition-colors"
+                                  onClick={() => { setRestockingProduct(item.id); setRestockQuantity('') }}
+                                  title="Restock"
+                                >
+                                  <Plus className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-muted-foreground hover:text-foreground rounded-lg"
+                                  onClick={() => setEditingProduct(item)}
+                                  title="Edit"
+                                >
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-muted-foreground hover:text-amber-600 rounded-lg"
+                                  onClick={() => toggleProductActiveStatus(item)}
+                                  title={item.isActive ? 'Deactivate' : 'Activate'}
+                                >
+                                  {item.isActive ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                </Button>
+                                {isAdmin && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-muted-foreground hover:text-primary rounded-lg"
+                                    onClick={() => openDistributionModal(item)}
+                                    title="Manage assignments"
+                                  >
+                                    <Users className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-muted-foreground hover:text-destructive rounded-lg"
+                                  onClick={() => { if (confirm(`Delete ${item.name}?`)) handleDeleteProduct(item.id) }}
+                                  title="Delete"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+
+                              {/* ── Small screen: kebab dropdown ── */}
+                              <div className="flex xl:hidden items-center justify-center">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground data-[state=open]:bg-muted"
+                                    >
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-44">
+                                    <DropdownMenuItem
+                                      onClick={() => { setRestockingProduct(item.id); setRestockQuantity('') }}
+                                      className="gap-2"
+                                    >
+                                      <Plus className="h-3.5 w-3.5 text-emerald-600" />
+                                      Restock
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => setEditingProduct(item)}
+                                      className="gap-2"
+                                    >
+                                      <Edit2 className="h-3.5 w-3.5" />
+                                      Edit product
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => toggleProductActiveStatus(item)}
+                                      className="gap-2"
+                                    >
+                                      {item.isActive
+                                        ? <><EyeOff className="h-3.5 w-3.5 text-amber-500" />Deactivate</>
+                                        : <><Eye className="h-3.5 w-3.5 text-emerald-600" />Activate</>
+                                      }
+                                    </DropdownMenuItem>
+                                    {isAdmin && (
+                                      <DropdownMenuItem
+                                        onClick={() => openDistributionModal(item)}
+                                        className="gap-2"
+                                      >
+                                        <Users className="h-3.5 w-3.5 text-primary" />
+                                        Manage assignments
+                                      </DropdownMenuItem>
+                                    )}
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      onClick={() => { if (confirm(`Delete ${item.name}?`)) handleDeleteProduct(item.id) }}
+                                      className="gap-2 text-destructive focus:text-destructive"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </>
                           )}
                         </td>
                       </tr>
@@ -1450,95 +1552,218 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* ── Product Distribution Modal ── */}
+      {/* ── Manage Distribution Modal ── */}
       {showDistributionModal && (distributionProduct || distributionProducts.length > 0) && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <Card className="w-full max-w-2xl shadow-lg rounded-2xl">
-            <CardHeader className="border-b pb-4">
-              <CardTitle className="flex items-center gap-2">
-                <Package className="h-5 w-5" />
-                Distribute: {distributionProducts.length > 0 ? `${distributionProducts.length} product(s)` : distributionProduct?.name}
-              </CardTitle>
-              {distributionProducts.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {distributionProducts.map(p => (
-                    <div key={p.id} className="inline-flex items-center gap-1 px-3 py-1 bg-primary/10 text-primary rounded-lg text-xs font-medium">
-                      {p.name}
-                    </div>
-                  ))}
-                </div>
-              )}
-              <p className="text-sm text-muted-foreground mt-2">Select which cashiers can access {distributionProducts.length > 0 ? 'these products' : 'this product'}</p>
-            </CardHeader>
-            <CardContent className="space-y-4 pt-6">
-              {isLoadingCashiers ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin h-5 w-5 text-primary" />
-                </div>
-              ) : cashiers.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">No cashiers available</p>
-              ) : (
-                <div className="border rounded-lg max-h-72 overflow-y-auto">
-                  <div className="space-y-1 p-2">
-                    {cashiers.map(cashier => (
-                      <div
-                        key={cashier.id}
-                        className="flex items-center gap-3 p-3 rounded hover:bg-muted/50 cursor-pointer transition-colors"
-                        onClick={() => {
-                          const newSet = new Set(selectedCashiers)
-                          if (newSet.has(cashier.id)) {
-                            newSet.delete(cashier.id)
-                          } else {
-                            newSet.add(cashier.id)
-                          }
-                          setSelectedCashiers(newSet)
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedCashiers.has(cashier.id)}
-                          onChange={() => {}}
-                          className="h-4 w-4 rounded cursor-pointer"
-                        />
-                        <span className="text-sm font-medium flex-1">{cashier.email}</span>
-                        {selectedCashiers.has(cashier.id) && (
-                          <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-lg shadow-2xl rounded-2xl flex flex-col max-h-[85vh] overflow-hidden">
 
-              <div className="bg-muted/30 rounded-lg p-3 border border-muted">
-                <p className="text-xs font-semibold text-foreground">
-                  {selectedCashiers.size} of {cashiers.length} cashier(s) selected
-                </p>
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2 pt-2">
-                <Button
-                  onClick={handleDistributeProduct}
-                  disabled={isDistributing}
-                  className="flex-1 bg-primary hover:bg-primary/90 rounded-lg"
-                >
-                  {isDistributing ? 'Distributing...' : 'Confirm Distribution'}
-                </Button>
-                <Button
+            {/* Header */}
+            <CardHeader className="border-b pb-4 shrink-0">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-0.5">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Package className="h-4 w-4 shrink-0 text-primary" />
+                    {isManageMode ? 'Manage Cashier Assignments' : 'Distribute Products'}
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    {isManageMode
+                      ? <><span className="font-semibold text-foreground">{distributeDisplayName}</span> — assign or remove cashier access</>
+                      : <>Assign <span className="font-semibold text-foreground">{distributeDisplayName}</span> to cashiers</>
+                    }
+                  </p>
+                </div>
+                <button
                   onClick={() => {
                     setShowDistributionModal(false)
                     setDistributionProduct(null)
+                    setDistributionProducts([])
                     setSelectedCashiers(new Set())
+                    setCurrentAssignments(new Set())
+                    managedProductIdRef.current = null
                   }}
-                  variant="outline"
-                  disabled={isDistributing}
-                  className="rounded-lg"
+                  className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
                 >
-                  Cancel
-                </Button>
+                  <X className="h-4 w-4" />
+                </button>
               </div>
+            </CardHeader>
+
+            {/* Scrollable body */}
+            <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-4 pt-5">
+
+              {/* Currently assigned chips — single-product manage mode only */}
+              {isManageMode && !isLoadingCashiers && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                    <UserMinus className="h-3 w-3" />
+                    Currently Assigned ({currentAssignments.size})
+                  </p>
+                  {currentAssignments.size === 0 ? (
+                    <div className="flex items-center gap-2 rounded-lg border border-dashed bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                      <Package className="h-3.5 w-3.5 shrink-0" />
+                      Not assigned to any cashier yet
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {Array.from(currentAssignments).map(cid => {
+                        const cashier = cashiers.find(c => c.id === cid)
+                        if (!cashier) return null
+                        const willRemoveThis = !selectedCashiers.has(cid)
+                        return (
+                          <div
+                            key={cid}
+                            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                              willRemoveThis
+                                ? 'bg-red-50 border-red-200 text-red-600 dark:bg-red-950/20 dark:border-red-800/50'
+                                : 'bg-primary/10 border-primary/20 text-primary'
+                            }`}
+                          >
+                            <span className="max-w-[150px] truncate">{cashier.email}</span>
+                            {willRemoveThis && (
+                              <span className="text-[9px] font-bold uppercase opacity-70">Removing</span>
+                            )}
+                            <button
+                              onClick={() => handleUndistributeCashier(distributionProducts[0].id, cashier.id, cashier.email)}
+                              className="hover:opacity-60 transition-opacity shrink-0"
+                              title={`Immediately remove ${cashier.email}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {isManageMode && !isLoadingCashiers && <div className="border-t border-dashed" />}
+
+              {/* Cashier selection list */}
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                  <Users className="h-3 w-3" />
+                  {isManageMode ? 'Assign or Remove Cashiers' : 'Select Cashiers'}
+                </p>
+                {isLoadingCashiers ? (
+                  <div className="space-y-2">
+                    {[1, 2, 3].map(i => (
+                      <div key={i} className="h-12 rounded-lg bg-muted animate-pulse" style={{ animationDelay: `${i * 80}ms` }} />
+                    ))}
+                  </div>
+                ) : cashiers.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-10 text-sm text-muted-foreground">
+                    <Users className="h-8 w-8 opacity-30" />
+                    <span>No cashiers available</span>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border overflow-hidden">
+                    {cashiers.map(cashier => {
+                      const isCurrentlyAssigned = currentAssignments.has(cashier.id)
+                      const isSelected = selectedCashiers.has(cashier.id)
+                      const willAdd = isManageMode && !isCurrentlyAssigned && isSelected
+                      const willRemove = isManageMode && isCurrentlyAssigned && !isSelected
+                      return (
+                        <div
+                          key={cashier.id}
+                          onClick={() => {
+                            const next = new Set(selectedCashiers)
+                            if (next.has(cashier.id)) next.delete(cashier.id)
+                            else next.add(cashier.id)
+                            setSelectedCashiers(next)
+                          }}
+                          className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors border-b last:border-b-0 ${
+                            willRemove
+                              ? 'bg-red-50/70 dark:bg-red-950/15'
+                              : willAdd
+                              ? 'bg-emerald-50/70 dark:bg-emerald-950/15'
+                              : isSelected
+                              ? 'bg-primary/5'
+                              : 'hover:bg-muted/40'
+                          }`}
+                        >
+                          {/* Custom checkbox */}
+                          <div className={`h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 transition-all ${
+                            isSelected ? 'border-primary bg-primary' : 'border-muted-foreground/40'
+                          }`}>
+                            {isSelected && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
+                          </div>
+                          <span className="text-sm font-medium flex-1 min-w-0 truncate">{cashier.email}</span>
+                          {/* Status pills — manage mode only */}
+                          {isManageMode && willRemove && (
+                            <span className="text-[10px] font-bold bg-red-100 dark:bg-red-900/30 text-red-600 px-2 py-0.5 rounded-full shrink-0">
+                              Will Remove
+                            </span>
+                          )}
+                          {isManageMode && isCurrentlyAssigned && !willRemove && (
+                            <span className="text-[10px] font-bold bg-primary/15 text-primary px-2 py-0.5 rounded-full shrink-0">
+                              Assigned
+                            </span>
+                          )}
+                          {isManageMode && willAdd && (
+                            <span className="text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 px-2 py-0.5 rounded-full shrink-0">
+                              Will Add
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Change summary */}
+              {!isLoadingCashiers && (distributeAddCount > 0 || distributeRemoveCount > 0) && (
+                <div className="flex items-center gap-4 px-0.5">
+                  {distributeAddCount > 0 && (
+                    <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
+                      <Check className="h-3 w-3" />
+                      {distributeAddCount} to assign
+                    </span>
+                  )}
+                  {distributeRemoveCount > 0 && (
+                    <span className="flex items-center gap-1.5 text-xs text-red-600 font-semibold">
+                      <UserMinus className="h-3 w-3" />
+                      {distributeRemoveCount} to remove
+                    </span>
+                  )}
+                </div>
+              )}
             </CardContent>
+
+            {/* Footer */}
+            <div className="shrink-0 px-6 py-4 border-t bg-muted/20 flex gap-2">
+              <Button
+                onClick={handleDistributeProduct}
+                disabled={isDistributing || (!isManageMode && selectedCashiers.size === 0)}
+                className="flex-1 rounded-xl"
+              >
+                {isDistributing ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-3.5 w-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                    Saving…
+                  </span>
+                ) : isManageMode
+                  ? 'Save Changes'
+                  : `Distribute to ${selectedCashiers.size} Cashier${selectedCashiers.size !== 1 ? 's' : ''}`
+                }
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowDistributionModal(false)
+                  setDistributionProduct(null)
+                  setDistributionProducts([])
+                  setSelectedCashiers(new Set())
+                  setCurrentAssignments(new Set())
+                  managedProductIdRef.current = null
+                }}
+                variant="outline"
+                disabled={isDistributing}
+                className="rounded-xl"
+              >
+                Cancel
+              </Button>
+            </div>
           </Card>
         </div>
       )}
@@ -1626,6 +1851,8 @@ export default function InventoryPage() {
                     setShowDistributionModal(true)
                     setShowProductSelector(false)
                     setDistributionSearch('')
+                    setCurrentAssignments(new Set())
+                    managedProductIdRef.current = null
                     setSelectedCashiers(new Set())
                   }}
                   className="flex-1 rounded-lg"

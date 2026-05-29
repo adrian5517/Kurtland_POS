@@ -1,270 +1,524 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
-import { Lock, Bell, BarChart3, Database, Shield, Settings } from 'lucide-react'
+import {
+  Lock, LogOut, User, ShieldCheck, Eye, EyeOff,
+  RefreshCw, CheckCircle2, Clock, Info, Pencil,
+} from 'lucide-react'
+import { getAuthSession, clearAuthSession, isTokenExpired, type AuthSession } from '@/lib/auth'
+import { apiFetch, apiHeaders } from '@/lib/api'
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function getInitials(name: string | null, email: string): string {
+  if (name) {
+    const parts = name.trim().split(/\s+/)
+    return parts.length >= 2
+      ? `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+      : parts[0].slice(0, 2).toUpperCase()
+  }
+  return email.slice(0, 2).toUpperCase()
+}
+
+function formatTokenExpiry(token: string): { label: string; isWarning: boolean } {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    const expiresAt = new Date((payload.exp || 0) * 1000)
+    const minutesLeft = Math.floor((expiresAt.getTime() - Date.now()) / 60_000)
+    if (minutesLeft <= 0) return { label: 'Expired', isWarning: true }
+    if (minutesLeft < 60) return { label: `Session expires in ${minutesLeft} minute${minutesLeft === 1 ? '' : 's'}`, isWarning: true }
+    const hours = Math.floor(minutesLeft / 60)
+    const mins = minutesLeft % 60
+    const timeStr = mins > 0 ? `${hours}h ${mins}m` : `${hours} hour${hours === 1 ? '' : 's'}`
+    return { label: `Session expires in ${timeStr}`, isWarning: hours < 2 }
+  } catch {
+    return { label: 'Unknown', isWarning: false }
+  }
+}
+
+// ─── Password field with show/hide toggle ─────────────────────────────────────
+
+function PasswordInput({
+  id, label, value, onChange, autoComplete, disabled,
+}: {
+  id: string
+  label: string
+  value: string
+  onChange: (v: string) => void
+  autoComplete?: string
+  disabled?: boolean
+}) {
+  const [show, setShow] = useState(false)
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="relative">
+        <Input
+          id={id}
+          type={show ? 'text' : 'password'}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          autoComplete={autoComplete}
+          placeholder="••••••••"
+          disabled={disabled}
+          className="pr-10"
+        />
+        <button
+          type="button"
+          onClick={() => setShow((s) => !s)}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+          tabIndex={-1}
+          aria-label={show ? 'Hide password' : 'Show password'}
+        >
+          {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+type PasswordForm = {
+  currentPassword: string
+  newPassword: string
+  confirmPassword: string
+}
+
+const EMPTY_PASSWORD_FORM: PasswordForm = {
+  currentPassword: '',
+  newPassword: '',
+  confirmPassword: '',
+}
 
 export default function SettingsPage() {
-  const [formData, setFormData] = useState({
-    businessName: 'Kurtland Canteen',
-    email: 'admin@kurtland.com',
-    phone: '+1 234 567 8900',
-    address: '123 Main Street, City',
-  })
+  const router = useRouter()
 
-  const [passwordData, setPasswordData] = useState({
-    current: '',
-    new: '',
-    confirm: '',
-  })
+  const [session, setSession] = useState<AuthSession | null>(null)
+  const [isRefreshingProfile, setIsRefreshingProfile] = useState(false)
+  const [profileForm, setProfileForm] = useState({ name: '', email: '' })
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false)
+  const [passwordForm, setPasswordForm] = useState<PasswordForm>(EMPTY_PASSWORD_FORM)
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  useEffect(() => {
+    const s = getAuthSession()
+    setSession(s)
+    if (s?.user) {
+      setProfileForm({ name: s.user.name ?? '', email: s.user.email ?? '' })
+    }
+  }, [])
+
+  const refreshProfile = useCallback(async () => {
+    const current = getAuthSession()
+    if (!current?.token) return
+    setIsRefreshingProfile(true)
+    try {
+      const res = await apiFetch('/api/auth/me', { headers: apiHeaders(current.token) })
+      if (!res.ok) throw new Error()
+      const { data } = await res.json()
+      const updated: AuthSession = { ...current, user: { ...current.user, ...data } }
+      window.localStorage.setItem('kurtland-auth', JSON.stringify(updated))
+      setSession(updated)
+      toast.success('Profile refreshed')
+    } catch {
+      toast.error('Could not refresh profile')
+    } finally {
+      setIsRefreshingProfile(false)
+    }
+  }, [])
+
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()
-    toast.success('Settings saved successfully')
+    const { currentPassword, newPassword, confirmPassword } = passwordForm
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      toast.error('Please fill in all fields')
+      return
+    }
+    if (newPassword.length < 8) {
+      toast.error('New password must be at least 8 characters')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('Passwords do not match')
+      return
+    }
+    if (currentPassword === newPassword) {
+      toast.error('New password must differ from the current one')
+      return
+    }
+
+    const current = getAuthSession()
+    if (!current?.token) { toast.error('Please sign in again'); return }
+
+    setIsChangingPassword(true)
+    try {
+      const res = await apiFetch('/api/users/me/password', {
+        method: 'PATCH',
+        headers: {
+          ...Object.fromEntries(apiHeaders(current.token).entries()),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.message || 'Failed to change password')
+      setPasswordForm(EMPTY_PASSWORD_FORM)
+      toast.success('Password changed successfully')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to change password')
+    } finally {
+      setIsChangingPassword(false)
+    }
   }
 
-  const handlePasswordChange = async (e: React.FormEvent) => {
+  const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault()
+    const { name, email } = profileForm
+    if (!name.trim()) { toast.error('Name is required'); return }
+    if (!email.trim()) { toast.error('Email is required'); return }
 
-    if (!passwordData.current || !passwordData.new || !passwordData.confirm) {
-      toast.error('Please fill in all password fields')
-      return
+    const current = getAuthSession()
+    if (!current?.token) { toast.error('Please sign in again'); return }
+
+    setIsUpdatingProfile(true)
+    try {
+      const res = await apiFetch('/api/users/me', {
+        method: 'PATCH',
+        headers: {
+          ...Object.fromEntries(apiHeaders(current.token).entries()),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: name.trim(), email: email.trim().toLowerCase() }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.message || 'Failed to update profile')
+      const updated: AuthSession = { ...current, user: { ...current.user, ...body.data } }
+      window.localStorage.setItem('kurtland-auth', JSON.stringify(updated))
+      setSession(updated)
+      toast.success('Profile updated successfully')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update profile')
+    } finally {
+      setIsUpdatingProfile(false)
     }
-
-    if (passwordData.new !== passwordData.confirm) {
-      toast.error('New passwords do not match')
-      return
-    }
-
-    if (passwordData.new.length < 8) {
-      toast.error('Password must be at least 8 characters')
-      return
-    }
-
-    toast.success('Password changed successfully')
-    setPasswordData({ current: '', new: '', confirm: '' })
   }
+
+  const handleSignOut = () => {
+    clearAuthSession()
+    router.push('/')
+  }
+
+  const user = session?.user ?? null
+  const tokenInfo = session?.token ? formatTokenExpiry(session.token) : null
+  const isExpired = session?.token ? isTokenExpired(session.token) : false
+  const initials = user ? getInitials(user.name, user.email) : '??'
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
+
+  const passwordStrength = (() => {
+    const p = passwordForm.newPassword
+    if (!p) return null
+    if (p.length < 8) return { label: 'Too short', color: 'bg-red-500', width: '20%' }
+    if (p.length < 10 || !/[0-9]/.test(p) || !/[A-Z]/.test(p)) return { label: 'Fair', color: 'bg-amber-500', width: '55%' }
+    if (!/[^a-zA-Z0-9]/.test(p)) return { label: 'Good', color: 'bg-emerald-400', width: '75%' }
+    return { label: 'Strong', color: 'bg-emerald-600', width: '100%' }
+  })()
 
   return (
-    <div className="w-full max-w-none space-y-6 md:space-y-8 animate-in fade-in duration-500">
-      {/* Header */}
-      <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="w-full max-w-none space-y-6 md:space-y-7 animate-in fade-in duration-300">
+
+      {/* ── Page Header ── */}
+      <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end sm:justify-between border-b pb-5">
         <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Kurtland POS</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Kurtland POS</p>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Settings</h1>
-          <p className="text-sm text-muted-foreground">Manage business details, account security, and system status.</p>
+          <p className="text-sm text-muted-foreground">Manage your account security and session.</p>
         </div>
-        <Settings className="w-8 h-8 text-primary hidden sm:block" />
       </div>
 
-      <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Business Information */}
-        <Card className="border-primary/10 shadow-sm rounded-3xl bg-card/95">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-primary" />
-              Business Information
-            </CardTitle>
-            <CardDescription>Update your business details</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="businessName">Business Name</Label>
-                <Input
-                  id="businessName"
-                  value={formData.businessName}
-                  onChange={(e) =>
-                    setFormData({ ...formData, businessName: e.target.value })
-                  }
-                />
+      <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-5">
+
+        {/* ── Left column ── */}
+        <div className="lg:col-span-2 flex flex-col gap-6">
+
+          {/* Account Card */}
+          <Card className="rounded-2xl border shadow-sm overflow-hidden">
+            <CardHeader className="pb-0 pt-5 px-5">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <User className="h-4 w-4 text-primary" />
+                Account
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-5 space-y-5">
+
+              {/* Avatar + info */}
+              <div className="flex items-center gap-4">
+                <div className="h-14 w-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+                  <span className="text-xl font-bold text-primary">{initials}</span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-foreground truncate">{user?.name || '—'}</p>
+                  <p className="text-sm text-muted-foreground truncate">{user?.email || '—'}</p>
+                  <span className={`inline-flex items-center gap-1 mt-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide border ${
+                    user?.role === 'admin'
+                      ? 'bg-primary/10 text-primary border-primary/20'
+                      : 'bg-muted text-muted-foreground border-border'
+                  }`}>
+                    <ShieldCheck className="h-2.5 w-2.5" />
+                    {user?.role ?? '—'}
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={refreshProfile}
+                  disabled={isRefreshingProfile}
+                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground rounded-lg"
+                  title="Refresh profile"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isRefreshingProfile ? 'animate-spin' : ''}`} />
+                </Button>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                />
+              {/* Session status */}
+              <div className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm ${
+                isExpired
+                  ? 'bg-red-50 border-red-200 dark:bg-red-950/20 dark:border-red-800/50'
+                  : tokenInfo?.isWarning
+                  ? 'bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800/50'
+                  : 'bg-muted/50 border-border'
+              }`}>
+                <Clock className={`h-4 w-4 shrink-0 ${
+                  isExpired ? 'text-red-500' : tokenInfo?.isWarning ? 'text-amber-500' : 'text-muted-foreground'
+                }`} />
+                <div className="min-w-0 flex-1">
+                  <p className={`text-xs font-semibold ${
+                    isExpired ? 'text-red-600' : tokenInfo?.isWarning ? 'text-amber-600' : 'text-foreground'
+                  }`}>
+                    {isExpired ? 'You have been signed out — please log in again' : (tokenInfo?.label ?? 'You are signed in')}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">You will be logged out automatically after 12 hours</p>
+                </div>
+                {!isExpired && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />}
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="phone">Phone Number</Label>
-                <Input
-                  id="phone"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="address">Business Address</Label>
-                <Input
-                  id="address"
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                />
-              </div>
-
-              <Button type="submit" className="w-full bg-primary hover:bg-primary/90">
-                Save Changes
+              {/* Sign out */}
+              <Button
+                variant="outline"
+                className="w-full gap-2 rounded-xl border-destructive/30 text-destructive hover:bg-destructive/5 hover:text-destructive hover:border-destructive/50 transition-colors"
+                onClick={handleSignOut}
+              >
+                <LogOut className="h-4 w-4" />
+                Sign Out
               </Button>
-            </form>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
 
-        {/* Change Password */}
-        <Card className="border-primary/10 shadow-sm rounded-3xl bg-card/95">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Lock className="w-5 h-5 text-primary" />
-              Change Password
-            </CardTitle>
-            <CardDescription>Update your account password</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handlePasswordChange} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="current">Current Password</Label>
-                <Input
-                  id="current"
-                  type="password"
-                  value={passwordData.current}
-                  onChange={(e) =>
-                    setPasswordData({ ...passwordData, current: e.target.value })
-                  }
+          {/* About Card */}
+          <Card className="rounded-2xl border shadow-sm">
+            <CardHeader className="pb-0 pt-5 px-5">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Info className="h-4 w-4 text-primary" />
+                About
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-5">
+              <dl className="space-y-3 text-sm">
+                {[
+                  { label: 'Application', value: 'Kurtland POS' },
+                  { label: 'Version', value: 'v1.0.0' },
+                  { label: 'API', value: apiUrl },
+                  { label: 'Environment', value: process.env.NODE_ENV || 'development' },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex items-start justify-between gap-4">
+                    <dt className="text-muted-foreground shrink-0">{label}</dt>
+                    <dd className="font-medium text-foreground text-right truncate max-w-[60%]" title={value}>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </CardContent>
+          </Card>
+
+        </div>
+
+        {/* ── Right column ── */}
+        <div className="lg:col-span-3 flex flex-col gap-6">
+
+          {/* Edit Profile Card */}
+          <Card className="rounded-2xl border shadow-sm">
+            <CardHeader className="pb-0 pt-5 px-5">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Pencil className="h-4 w-4 text-primary" />
+                Edit Profile
+              </CardTitle>
+              <CardDescription>Update your display name and email address.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-5">
+              <form onSubmit={handleUpdateProfile} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="profileName">Full Name</Label>
+                  <Input
+                    id="profileName"
+                    value={profileForm.name}
+                    onChange={(e) => setProfileForm((f) => ({ ...f, name: e.target.value }))}
+                    placeholder="Your full name"
+                    autoComplete="name"
+                    disabled={isUpdatingProfile}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="profileEmail">Email Address</Label>
+                  <Input
+                    id="profileEmail"
+                    type="email"
+                    value={profileForm.email}
+                    onChange={(e) => setProfileForm((f) => ({ ...f, email: e.target.value }))}
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    disabled={isUpdatingProfile}
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  className="w-full rounded-xl"
+                  disabled={isUpdatingProfile || (!profileForm.name.trim() && !profileForm.email.trim())}
+                >
+                  {isUpdatingProfile ? (
+                    <span className="flex items-center gap-2">
+                      <span className="h-3.5 w-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                      Saving…
+                    </span>
+                  ) : 'Save Profile'}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* Change Password Card */}
+          <Card className="rounded-2xl border shadow-sm">
+            <CardHeader className="pb-0 pt-5 px-5">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Lock className="h-4 w-4 text-primary" />
+                Change Password
+              </CardTitle>
+              <CardDescription>Must be at least 8 characters.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-5">
+              <form onSubmit={handleChangePassword} className="space-y-5">
+
+                <PasswordInput
+                  id="currentPassword"
+                  label="Current Password"
+                  value={passwordForm.currentPassword}
+                  onChange={(v) => setPasswordForm((f) => ({ ...f, currentPassword: v }))}
+                  autoComplete="current-password"
+                  disabled={isChangingPassword}
                 />
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="new">New Password</Label>
-                <Input
-                  id="new"
-                  type="password"
-                  value={passwordData.new}
-                  onChange={(e) =>
-                    setPasswordData({ ...passwordData, new: e.target.value })
-                  }
+                <PasswordInput
+                  id="newPassword"
+                  label="New Password"
+                  value={passwordForm.newPassword}
+                  onChange={(v) => setPasswordForm((f) => ({ ...f, newPassword: v }))}
+                  autoComplete="new-password"
+                  disabled={isChangingPassword}
                 />
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="confirm">Confirm Password</Label>
-                <Input
-                  id="confirm"
-                  type="password"
-                  value={passwordData.confirm}
-                  onChange={(e) =>
-                    setPasswordData({ ...passwordData, confirm: e.target.value })
-                  }
+                {/* Password strength indicator */}
+                {passwordStrength && (
+                  <div className="space-y-1 -mt-2">
+                    <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${passwordStrength.color}`}
+                        style={{ width: passwordStrength.width }}
+                      />
+                    </div>
+                    <p className={`text-[11px] font-semibold ${
+                      passwordStrength.label === 'Too short' ? 'text-red-500' :
+                      passwordStrength.label === 'Fair' ? 'text-amber-500' :
+                      'text-emerald-600'
+                    }`}>
+                      {passwordStrength.label}
+                    </p>
+                  </div>
+                )}
+
+                <PasswordInput
+                  id="confirmPassword"
+                  label="Confirm New Password"
+                  value={passwordForm.confirmPassword}
+                  onChange={(v) => setPasswordForm((f) => ({ ...f, confirmPassword: v }))}
+                  autoComplete="new-password"
+                  disabled={isChangingPassword}
                 />
-              </div>
 
-              <Button type="submit" className="w-full bg-primary hover:bg-primary/90">
-                Update Password
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+                {/* Match hint */}
+                {passwordForm.confirmPassword && (
+                  <p className={`-mt-2 text-[11px] font-semibold flex items-center gap-1 ${
+                    passwordForm.newPassword === passwordForm.confirmPassword ? 'text-emerald-600' : 'text-red-500'
+                  }`}>
+                    {passwordForm.newPassword === passwordForm.confirmPassword
+                      ? <><CheckCircle2 className="h-3 w-3" /> Passwords match</>
+                      : 'Passwords do not match'
+                    }
+                  </p>
+                )}
+
+                <Button
+                  type="submit"
+                  className="w-full rounded-xl"
+                  disabled={isChangingPassword}
+                >
+                  {isChangingPassword ? (
+                    <span className="flex items-center gap-2">
+                      <span className="h-3.5 w-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                      Updating…
+                    </span>
+                  ) : (
+                    'Update Password'
+                  )}
+                </Button>
+
+                {/* Live requirements checklist */}
+                <ul className="text-[11px] text-muted-foreground space-y-1.5 pt-1 border-t">
+                  {[
+                    {
+                      label: 'At least 8 characters',
+                      met: passwordForm.newPassword.length >= 8,
+                    },
+                    {
+                      label: 'One uppercase letter',
+                      met: /[A-Z]/.test(passwordForm.newPassword),
+                    },
+                    {
+                      label: 'One number',
+                      met: /[0-9]/.test(passwordForm.newPassword),
+                    },
+                    {
+                      label: 'Different from current password',
+                      met: passwordForm.newPassword !== '' && passwordForm.currentPassword !== passwordForm.newPassword,
+                    },
+                  ].map(({ label, met }) => (
+                    <li key={label} className="flex items-center gap-1.5">
+                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 transition-colors ${met ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`} />
+                      <span className={met ? 'text-emerald-600 font-medium' : ''}>{label}</span>
+                    </li>
+                  ))}
+                </ul>
+
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+
       </div>
-
-      {/* Security & Privacy */}
-      <Card className="border-primary/10 shadow-sm rounded-3xl bg-card/95">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Shield className="w-5 h-5 text-primary" />
-            Security & Privacy
-          </CardTitle>
-          <CardDescription>Manage your security settings</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-4">
-            {/* Two-Factor Authentication */}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between p-4 border border-primary/10 rounded-2xl bg-muted/30">
-              <div>
-                <p className="font-semibold text-foreground">Two-Factor Authentication</p>
-                <p className="text-sm text-muted-foreground">
-                  Add an extra layer of security to your account
-                </p>
-              </div>
-              <Button variant="outline" className="border-primary/20 text-primary hover:bg-primary/10">
-                Enable
-              </Button>
-            </div>
-
-            {/* Session Management */}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between p-4 border border-primary/10 rounded-2xl bg-muted/30">
-              <div>
-                <p className="font-semibold text-foreground">Active Sessions</p>
-                <p className="text-sm text-muted-foreground">
-                  Manage devices that can access your account
-                </p>
-              </div>
-              <Button variant="outline" className="border-primary/20 text-primary hover:bg-primary/10">
-                Manage
-              </Button>
-            </div>
-
-            {/* API Keys */}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between p-4 border border-primary/10 rounded-2xl bg-muted/30">
-              <div>
-                <p className="font-semibold text-foreground">API Keys</p>
-                <p className="text-sm text-muted-foreground">
-                  Create and manage API keys for integrations
-                </p>
-              </div>
-              <Button variant="outline" className="border-primary/20 text-primary hover:bg-primary/10">
-                Configure
-              </Button>
-            </div>
-          </div>
-
-          {/* Compliance */}
-          <div className="bg-primary/5 p-4 rounded-2xl space-y-2 border border-primary/10">
-            <p className="font-semibold text-foreground flex items-center gap-2">
-              <Database className="w-4 h-4" />
-              Data Protection
-            </p>
-            <ul className="text-sm text-muted-foreground space-y-1 ml-6 list-disc">
-              <li>All data is encrypted using industry-standard AES-256</li>
-              <li>Row-Level Security (RLS) protects your information</li>
-              <li>Regular security audits and monitoring</li>
-              <li>GDPR compliant data handling practices</li>
-              <li>Automated backups every 24 hours</li>
-            </ul>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* System Status */}
-      <Card className="border-primary/10 shadow-sm rounded-3xl bg-card/95">
-        <CardHeader>
-          <CardTitle>System Status</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {[
-              { name: 'Database', status: 'Operational' },
-              { name: 'API Server', status: 'Operational' },
-              { name: 'Authentication', status: 'Operational' },
-              { name: 'Backup Service', status: 'Operational' },
-            ].map((service) => (
-              <div key={service.name} className="flex items-center justify-between p-4 border border-primary/10 rounded-2xl bg-muted/30">
-                <p className="font-medium text-foreground">{service.name}</p>
-                <span className="text-xs px-3 py-1 rounded-full bg-primary/20 text-primary font-semibold">
-                  {service.status}
-                </span>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }

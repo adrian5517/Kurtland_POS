@@ -79,6 +79,15 @@ const userController = {
       next(error)
     }
   },
+
+  async updateOwnProfile(req, res, next) {
+    try {
+      const user = await userService.updateOwnProfile(req.user.id, req.body)
+      return res.json({ data: user })
+    } catch (error) {
+      next(error)
+    }
+  },
 }
 
 module.exports = { userController }

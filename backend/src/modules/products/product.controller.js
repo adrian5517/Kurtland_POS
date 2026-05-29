@@ -134,6 +134,23 @@ const productController = {
       next(error)
     }
   },
+
+  async removeSingleCashier(req, res, next) {
+    try {
+      const productId = Number(req.params.id)
+      const cashierId = Number(req.params.cashierId)
+      if (!Number.isInteger(productId) || productId <= 0) {
+        return res.status(400).json({ error: 'Invalid product ID' })
+      }
+      if (!Number.isInteger(cashierId) || cashierId <= 0) {
+        return res.status(400).json({ error: 'Invalid cashier ID' })
+      }
+      await productService.removeSingleCashier(productId, cashierId)
+      return res.status(204).send()
+    } catch (error) {
+      next(error)
+    }
+  },
 }
 
 module.exports = { productController }

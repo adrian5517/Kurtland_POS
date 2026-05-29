@@ -168,6 +168,14 @@ const productService = {
     return await productRepository.getCashiersForProduct(productId)
   },
 
+  async removeSingleCashier(productId, cashierId) {
+    const removed = await productRepository.removeFromCashier(productId, cashierId)
+    if (!removed) {
+      throw new HttpError(404, 'Assignment not found')
+    }
+    return removed
+  },
+
   async assignProductToCashiers(productId, cashierIds) {
     // First, remove all existing assignments for this product
     const existingCashiers = await productRepository.getCashiersForProduct(productId)
