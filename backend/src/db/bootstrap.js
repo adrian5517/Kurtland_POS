@@ -69,6 +69,17 @@ async function bootstrapDatabase() {
     );
   `)
 
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS order_logs (
+      id SERIAL PRIMARY KEY,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      action TEXT NOT NULL,
+      note TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+  await db.query('CREATE INDEX IF NOT EXISTS idx_order_logs_order_id ON order_logs(order_id)')
+
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS products_sku_idx ON products (sku)')
   await db.query('CREATE UNIQUE INDEX IF NOT EXISTS users_email_idx ON users (email)')
   await db.query(`

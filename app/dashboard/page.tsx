@@ -233,6 +233,12 @@ function useProducts() {
  */
 function useCart(products: POSProduct[]) {
   const [cart, setCart] = useState<CartItem[]>([])
+  // Stable ref that always mirrors the latest cart without widening useCallback
+  // dependency arrays. Reading `.current` before setCart gives a synchronous
+  // snapshot of state that TypeScript CAN reason about (unlike a let variable
+  // mutated inside a setState updater, which produces `never` on optional call).
+  const cartRef = useRef(cart)
+  cartRef.current = cart
 
   /**
    * Look up the live product snapshot from the products list.
@@ -246,44 +252,43 @@ function useCart(products: POSProduct[]) {
 
   const addToCart = useCallback(
     (product: POSProduct) => {
-      // Guard: inactive product
       if (!product.isActive) {
         toast.error(`${product.name} is not available`)
         return
       }
-
-      // Guard: zero stock
       if (product.currentStock <= 0) {
         toast.error(`${product.name} is out of stock`)
         return
       }
 
-      // Determine the toast to show OUTSIDE setCart so it fires exactly once.
-      // (React 18 Strict Mode invokes setState updaters twice in dev, which
-      //  would duplicate any toast called inside the updater.)
-      let notify: (() => void) | null = null
+      // Determine the notification from the latest cart snapshot BEFORE the
+      // state update. This gives TypeScript a concrete type for `notifyFn`
+      // (avoids the `never` narrowing that occurs when mutating a variable
+      // inside a setState callback) and keeps the updater below side-effect-free
+      // (safe under React 18 Strict Mode's double-invocation of updaters).
+      const existing = cartRef.current.find((item) => item.id === product.id)
+      let notifyFn: () => void
 
+      if (existing) {
+        notifyFn =
+          existing.quantity >= product.currentStock
+            ? () => toast.warning(`Only ${product.currentStock} units available`)
+            : () => toast.success(`${product.name} qty updated`)
+      } else {
+        notifyFn = () => toast.success(`${product.name} added`)
+      }
+
+      // Pure updater — reads only `prev`, zero side-effects
       setCart((prev) => {
-        const existing = prev.find((item) => item.id === product.id)
-
-        if (existing) {
-          if (existing.quantity >= product.currentStock) {
-            notify = () => toast.warning(`Only ${product.currentStock} units available`)
-            return prev
-          }
-          notify = () => toast.success(`${product.name} qty updated`)
+        const ex = prev.find((item) => item.id === product.id)
+        if (ex) {
+          if (ex.quantity >= product.currentStock) return prev
           return prev.map((item) =>
             item.id === product.id
-              ? {
-                  ...item,
-                  quantity: item.quantity + 1,
-                  subtotal: (item.quantity + 1) * item.price,
-                }
+              ? { ...item, quantity: item.quantity + 1, subtotal: (item.quantity + 1) * item.price }
               : item,
           )
         }
-
-        notify = () => toast.success(`${product.name} added`)
         return [
           ...prev,
           {
@@ -298,8 +303,7 @@ function useCart(products: POSProduct[]) {
         ]
       })
 
-      // Call once after setCart — never inside the updater
-      notify?.()
+      notifyFn()
     },
     [],
   )
@@ -316,25 +320,27 @@ function useCart(products: POSProduct[]) {
         return
       }
 
-      let notify: (() => void) | null = null
+      // Resolve all constraints before the state update so the updater is pure
+      // and `notifyFn` has a concrete type (no `never` from CFA across closures).
+      const currentItem = cartRef.current.find((i) => i.id === productId)
+      const liveProduct = getProduct(productId)
+      const maxQty = liveProduct?.currentStock ?? currentItem?.maxStock ?? quantity
+      const clampedQty = Math.min(quantity, maxQty)
+      const notifyFn: (() => void) | null =
+        currentItem && clampedQty < quantity
+          ? () => toast.warning(`Only ${maxQty} units available for ${currentItem.name}`)
+          : null
 
+      // Pure updater — only prev → next, no external reads or mutations
       setCart((prev) =>
-        prev.map((item) => {
-          if (item.id !== productId) return item
-
-          const liveProduct = getProduct(productId)
-          const maxQty = liveProduct?.currentStock ?? item.maxStock
-          const clampedQty = Math.min(quantity, maxQty)
-
-          if (clampedQty < quantity) {
-            notify = () => toast.warning(`Only ${maxQty} units available for ${item.name}`)
-          }
-
-          return { ...item, quantity: clampedQty, subtotal: clampedQty * item.price }
-        }),
+        prev.map((item) =>
+          item.id !== productId
+            ? item
+            : { ...item, quantity: clampedQty, subtotal: clampedQty * item.price },
+        ),
       )
 
-      notify?.()
+      notifyFn?.()
     },
     [removeFromCart, getProduct],
   )
