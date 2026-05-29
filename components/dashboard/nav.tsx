@@ -7,13 +7,54 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   LogOut, ShoppingCart, Boxes, BarChart3,
   Users, Settings, Menu, X,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, Wallet,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useEffect, useMemo, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { clearAuthSession, getAuthSession } from '@/lib/auth'
 import type { AuthSession } from '@/lib/auth'
+import { apiFetch, apiHeaders } from '@/lib/api'
+
+const BUDGET_SEEN_KEY = 'kurtland-budget-seen-at'
+
+function useBudgetNotification(token: string | undefined, role: string, pathname: string) {
+  const [hasDot, setHasDot] = useState(false)
+
+  // Mark as seen when visiting the page
+  useEffect(() => {
+    if (pathname === '/dashboard/budget-requests') {
+      localStorage.setItem(BUDGET_SEEN_KEY, new Date().toISOString())
+      setHasDot(false)
+    }
+  }, [pathname])
+
+  // Check for new items on mount and every 30 s
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+
+    async function check() {
+      const seenAt = localStorage.getItem(BUDGET_SEEN_KEY) ?? '1970-01-01T00:00:00.000Z'
+      try {
+        const res = await apiFetch('/api/budget-requests', { headers: apiHeaders(token!) })
+        if (!res.ok || cancelled) return
+        const { data } = await res.json()
+        const items: Array<{ status: string; created_at: string; reviewed_at?: string }> = data ?? []
+        const hasNew = role === 'admin'
+          ? items.some(r => r.status === 'pending' && r.created_at > seenAt)
+          : items.some(r => r.status !== 'pending' && r.reviewed_at != null && r.reviewed_at > seenAt)
+        if (!cancelled && pathname !== '/dashboard/budget-requests') setHasDot(hasNew)
+      } catch { /* silent */ }
+    }
+
+    check()
+    const id = setInterval(check, 30_000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [token, role])
+
+  return hasDot
+}
 
 const NAV_ITEMS = [
   { href: '/dashboard',                    label: 'POS',                 icon: ShoppingCart, adminOnly: false },
@@ -21,6 +62,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/cashier-analytics',  label: 'Cashier Analytics',   icon: BarChart3,    adminOnly: true  },
   { href: '/dashboard/reports',            label: 'Reports',             icon: BarChart3,    adminOnly: true  },
   { href: '/dashboard/users',              label: 'Users',               icon: Users,        adminOnly: true  },
+  { href: '/dashboard/budget-requests',    label: 'Budget Requests',     icon: Wallet,       adminOnly: false },
   { href: '/dashboard/settings',           label: 'Settings',            icon: Settings,     adminOnly: false },
 ]
 
@@ -39,6 +81,7 @@ type InitialsProps = {
 type NavLinkProps = {
   item: NavItem
   collapsed: boolean
+  hasDot?: boolean
   onClick?: () => void
 }
 
@@ -61,7 +104,7 @@ function Initials({ email, role }: InitialsProps) {
 }
 
 // ─── Single nav link ──────────────────────────────────────────────────────────
-function NavLink({ item, collapsed, onClick }: NavLinkProps) {
+function NavLink({ item, collapsed, hasDot = false, onClick }: NavLinkProps) {
   const pathname = usePathname()
   const Icon = item.icon
   const isActive = pathname === item.href
@@ -86,12 +129,17 @@ function NavLink({ item, collapsed, onClick }: NavLinkProps) {
         <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-white/60" />
       )}
 
-      <Icon
-        className={`h-[18px] w-[18px] shrink-0 transition-transform duration-150
-          ${isActive ? 'text-white' : 'text-white/50 group-hover:text-white/80'}
-          ${!isActive && !collapsed ? 'group-hover:scale-110' : ''}
-        `}
-      />
+      <span className="relative shrink-0">
+        <Icon
+          className={`h-[18px] w-[18px] block transition-transform duration-150
+            ${isActive ? 'text-white' : 'text-white/50 group-hover:text-white/80'}
+            ${!isActive && !collapsed ? 'group-hover:scale-110' : ''}
+          `}
+        />
+        {hasDot && (
+          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-[#1e2a31]" />
+        )}
+      </span>
 
       <AnimatePresence initial={false}>
         {!collapsed && (
@@ -116,11 +164,15 @@ export default function DashboardNav() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [session, setSession] = useState<AuthSession | null>(null)
+  const pathname = usePathname()
 
   useEffect(() => { setSession(getAuthSession()) }, [])
 
+  const token = session?.token
+
   const role = session?.user?.role ?? 'cashier'
   const email = session?.user?.email ?? (role === 'admin' ? 'admin@kurtland.com' : 'cashier@kurtland.com')
+  const budgetDot = useBudgetNotification(token, role, pathname)
 
   const visibleNavItems = useMemo(
     () => NAV_ITEMS.filter(item => role === 'admin' || !item.adminOnly),
@@ -229,7 +281,12 @@ export default function DashboardNav() {
         {/* Nav items */}
         <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-0.5">
           {visibleNavItems.map(item => (
-            <NavLink key={item.href} item={item} collapsed={collapsed} />
+            <NavLink
+              key={item.href}
+              item={item}
+              collapsed={collapsed}
+              hasDot={item.href === '/dashboard/budget-requests' && budgetDot}
+            />
           ))}
         </nav>
 
@@ -333,6 +390,7 @@ export default function DashboardNav() {
                     key={item.href}
                     item={item}
                     collapsed={false}
+                    hasDot={item.href === '/dashboard/budget-requests' && budgetDot}
                     onClick={() => setMobileOpen(false)}
                   />
                 ))}

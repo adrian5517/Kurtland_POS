@@ -109,6 +109,43 @@ async function bootstrapDatabase() {
   await db.query('CREATE INDEX IF NOT EXISTS idx_product_cashier_product ON product_cashier_assignments(product_id)')
   await db.query('CREATE INDEX IF NOT EXISTS idx_product_cashier_cashier ON product_cashier_assignments(cashier_id)')
 
+  // Budget request system
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS budget_requests (
+      id SERIAL PRIMARY KEY,
+      cashier_id INTEGER NOT NULL REFERENCES users(id),
+      amount NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+      reason TEXT NOT NULL,
+      cashier_note TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+      admin_note TEXT,
+      reviewed_by INTEGER REFERENCES users(id),
+      reviewed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+  await db.query('CREATE INDEX IF NOT EXISTS idx_budget_requests_cashier ON budget_requests(cashier_id)')
+  await db.query('CREATE INDEX IF NOT EXISTS idx_budget_requests_status ON budget_requests(status)')
+
+  // Budget return/turnover system
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS budget_returns (
+      id SERIAL PRIMARY KEY,
+      budget_request_id INTEGER NOT NULL REFERENCES budget_requests(id) ON DELETE CASCADE,
+      cashier_id INTEGER NOT NULL REFERENCES users(id),
+      amount NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+      reason TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+      admin_note TEXT,
+      reviewed_by INTEGER REFERENCES users(id),
+      reviewed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+  await db.query('CREATE INDEX IF NOT EXISTS idx_budget_returns_cashier ON budget_returns(cashier_id)')
+  await db.query('CREATE INDEX IF NOT EXISTS idx_budget_returns_status ON budget_returns(status)')
+  await db.query('CREATE INDEX IF NOT EXISTS idx_budget_returns_request ON budget_returns(budget_request_id)')
+
   const { rows } = await db.query('SELECT COUNT(*)::int AS count FROM products')
 
   if (rows[0]?.count === 0) {

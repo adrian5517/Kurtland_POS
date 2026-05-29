@@ -5,6 +5,13 @@ import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { validateAuthSession } from '@/lib/auth'
 
+// Paths accessible by both admin and cashier roles
+const CASHIER_ALLOWED_PATHS = [
+  '/dashboard',
+  '/dashboard/budget-requests',
+  '/dashboard/settings',
+]
+
 type DashboardAccessGuardProps = {
   children: ReactNode
 }
@@ -23,7 +30,7 @@ export default function DashboardAccessGuard({ children }: DashboardAccessGuardP
       return
     }
 
-    if (session.user.role === 'cashier' && pathname !== '/dashboard') {
+    if (session.user.role === 'cashier' && !CASHIER_ALLOWED_PATHS.includes(pathname)) {
       router.replace('/dashboard')
       return
     }

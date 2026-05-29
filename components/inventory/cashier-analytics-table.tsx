@@ -40,6 +40,7 @@ import {
   ShoppingCart,
   BarChart3,
   Boxes,
+  Wallet,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -72,6 +73,14 @@ interface CashierAnalytic {
   stock_alerts_count: number
   stock_alerts: StockAlert[]
   products: Product[]
+}
+
+interface CashierBudgetStat {
+  cashierId: number
+  totalRevenue: number
+  totalApproved: number
+  totalPending: number
+  remaining: number
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -160,7 +169,7 @@ function StockProgressBar({ quantity, minStock }: { quantity: number; minStock: 
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 
-export function CashierAnalyticsTable() {
+export function CashierAnalyticsTable({ budgetStats = {} }: { budgetStats?: Record<number, CashierBudgetStat> }) {
   const [analytics, setAnalytics] = useState<CashierAnalytic[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -504,6 +513,16 @@ export function CashierAnalyticsTable() {
                     <BarChart3 className="h-4 w-4" />
                     Financials
                   </TabsTrigger>
+
+                  {budgetStats[selectedCashier.id] && (
+                    <TabsTrigger
+                      value="budget"
+                      className="rounded-t-lg rounded-b-none border-b-2 border-transparent px-4 py-2.5 text-sm data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-primary"
+                    >
+                      <Wallet className="h-4 w-4" />
+                      Budget
+                    </TabsTrigger>
+                  )}
                 </TabsList>
               </div>
 
@@ -735,6 +754,62 @@ export function CashierAnalyticsTable() {
                   </div>
                 )}
               </TabsContent>
+
+              {/* Tab: Budget */}
+              {budgetStats[selectedCashier.id] && (() => {
+                const bs = budgetStats[selectedCashier.id]
+                const used = bs.totalApproved + bs.totalPending
+                const usedPct = bs.totalRevenue > 0 ? Math.min(100, (used / bs.totalRevenue) * 100) : 0
+                const approvedPct = bs.totalRevenue > 0 ? Math.min(100, (bs.totalApproved / bs.totalRevenue) * 100) : 0
+                return (
+                  <TabsContent value="budget" className="m-0 p-4 space-y-4">
+                    {/* Utilization bar */}
+                    <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-foreground">Budget Utilization</p>
+                        <span className={`text-sm font-bold ${usedPct >= 100 ? 'text-red-600' : usedPct >= 75 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                          {usedPct.toFixed(1)}%
+                        </span>
+                      </div>
+                      <Progress
+                        value={usedPct}
+                        className={`h-3 ${usedPct >= 100 ? '[&>div]:bg-red-500' : usedPct >= 75 ? '[&>div]:bg-amber-500' : '[&>div]:bg-emerald-500'}`}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {formatCurrency(used)} allocated out of {formatCurrency(bs.totalRevenue)} total revenue
+                      </p>
+                    </div>
+
+                    {/* Budget KPI grid */}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-xl border bg-card p-4 space-y-1">
+                        <p className="text-xs font-medium text-muted-foreground">Total Revenue</p>
+                        <p className="text-xl font-bold text-foreground">{formatCurrency(bs.totalRevenue)}</p>
+                        <p className="text-xs text-muted-foreground">All-time sales</p>
+                      </div>
+                      <div className="rounded-xl border bg-emerald-50/60 p-4 space-y-1">
+                        <p className="text-xs font-medium text-muted-foreground">Approved Budget</p>
+                        <p className="text-xl font-bold text-emerald-600">{formatCurrency(bs.totalApproved)}</p>
+                        <p className="text-xs text-muted-foreground">{approvedPct.toFixed(1)}% of revenue</p>
+                      </div>
+                      <div className="rounded-xl border bg-amber-50/60 p-4 space-y-1">
+                        <p className="text-xs font-medium text-muted-foreground">Pending Requests</p>
+                        <p className="text-xl font-bold text-amber-600">{formatCurrency(bs.totalPending)}</p>
+                        <p className="text-xs text-muted-foreground">Awaiting review</p>
+                      </div>
+                      <div className={`rounded-xl border p-4 space-y-1 ${bs.remaining <= 0 ? 'bg-red-50/60' : 'bg-card'}`}>
+                        <p className="text-xs font-medium text-muted-foreground">Remaining Allowance</p>
+                        <p className={`text-xl font-bold ${bs.remaining <= 0 ? 'text-red-600' : 'text-foreground'}`}>
+                          {formatCurrency(bs.remaining)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {bs.remaining <= 0 ? 'No more budget available' : 'Can still be requested'}
+                        </p>
+                      </div>
+                    </div>
+                  </TabsContent>
+                )
+              })()}
             </Tabs>
           </CardContent>
         </Card>
