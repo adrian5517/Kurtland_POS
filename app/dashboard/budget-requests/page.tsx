@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -155,6 +155,7 @@ export default function BudgetRequestsPage() {
 
   // Returns data
   const [returns, setReturns] = useState<BudgetReturn[]>([])
+  const [allReturns, setAllReturns] = useState<BudgetReturn[]>([])
   const [isLoadingReturns, setIsLoadingReturns] = useState(false)
   const [returnsFilter, setReturnsFilter] = useState<StatusFilter>('all')
 
@@ -189,16 +190,19 @@ export default function BudgetRequestsPage() {
         apiFetch('/api/budget-requests/summary', { headers: apiHeaders(token) }),
       ]
       if (isAdmin) calls.push(apiFetch('/api/budget-requests/cashier-stats', { headers: apiHeaders(token) }))
+      else calls.push(apiFetch('/api/budget-returns', { headers: apiHeaders(token) }))
 
       const results = await Promise.all(calls)
       if (results.some((r) => !r.ok)) throw new Error('Failed to load data')
-      const [listData, summaryData, statsData] = await Promise.all(results.map((r) => r.json()))
+      const [listData, summaryData, extraData] = await Promise.all(results.map((r) => r.json()))
       setRequests(listData.data)
       setSummary(summaryData.data)
-      if (isAdmin && statsData) {
+      if (isAdmin && extraData) {
         const map: Record<number, CashierStat> = {}
-        for (const s of statsData.data as CashierStat[]) map[s.cashierId] = s
+        for (const s of extraData.data as CashierStat[]) map[s.cashierId] = s
         setCashierStatsMap(map)
+      } else if (!isAdmin && extraData) {
+        setAllReturns(extraData.data)
       }
     } catch {
       toast.error('Failed to load budget requests')
@@ -292,6 +296,17 @@ export default function BudgetRequestsPage() {
     setReviewForm({ status: 'approved', adminNote: '' })
   }
 
+  // Amount already pending/approved-returned per request ID — used to hide the Return Budget button
+  const returnedAmountByRequest = useMemo(() => {
+    const map: Record<number, number> = {}
+    for (const ret of allReturns) {
+      if (ret.status === 'pending' || ret.status === 'approved') {
+        map[ret.budgetRequestId] = (map[ret.budgetRequestId] ?? 0) + ret.amount
+      }
+    }
+    return map
+  }, [allReturns])
+
   const loadReturns = useCallback(async () => {
     if (!token) return
     setIsLoadingReturns(true)
@@ -336,6 +351,7 @@ export default function BudgetRequestsPage() {
       setReturnTarget(null)
       setReturnForm({ amount: '', reason: '' })
       loadData()
+      loadReturns()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to submit return')
     } finally {
@@ -547,7 +563,9 @@ export default function BudgetRequestsPage() {
                   req={req}
                   isAdmin={isAdmin}
                   onReview={openReview}
-                  onReturn={!isAdmin && req.status === 'approved' ? (r) => { setReturnTarget(r); setReturnForm({ amount: '', reason: '' }) } : undefined}
+                  onReturn={!isAdmin && req.status === 'approved' && (returnedAmountByRequest[req.id] ?? 0) < req.amount
+                    ? (r) => { setReturnTarget(r); setReturnForm({ amount: '', reason: '' }) }
+                    : undefined}
                 />
               ))}
             </div>
