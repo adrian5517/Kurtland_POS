@@ -42,30 +42,40 @@ const CURRENCY_SYMBOL = '₱'
 function fmt(value: number): string {
   return `${CURRENCY_SYMBOL}${value.toFixed(2)}`
 }
-
+/** Escapes special HTML characters to prevent injection in the print document. */
+function escHtml(str: string): string {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
 /**
  * Builds a fully self-contained HTML document for the browser print window.
  * All styles are inlined so the output is independent of Tailwind or any
  * external stylesheet — ensuring correct rendering across all browsers.
  */
 function buildPrintDocument(data: Omit<ReceiptProps, 'onClose'> & { logoUrl: string }): string {
+  const insufficientPayment = data.amountPaid < data.total
   const itemRows = data.items
     .map(
       (item) => `
       <tr>
-        <td class="item-name">${item.name}</td>
-        <td class="center">${item.quantity}</td>
-        <td class="right">${fmt(item.price)}</td>
-        <td class="right bold">${fmt(item.subtotal)}</td>
+        <td class="item-name">${escHtml(item.name)}</td>
+        <td class="num center">${item.quantity}</td>
+        <td class="num right">${fmt(item.price)}</td>
+        <td class="num right bold">${fmt(item.subtotal)}</td>
       </tr>`,
     )
     .join('')
 
   return `<!DOCTYPE html>
+<!-- Receipt v1.0 -->
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Receipt — ${data.transactionId}</title>
+  <title>Receipt — ${escHtml(data.transactionId)}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -90,6 +100,7 @@ function buildPrintDocument(data: Omit<ReceiptProps, 'onClose'> & { logoUrl: str
     .center { text-align: center; }
     .right  { text-align: right; }
     .bold   { font-weight: 700; }
+    .num    { font-variant-numeric: tabular-nums; }
 
     /* Header */
     .header { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
@@ -116,37 +127,43 @@ function buildPrintDocument(data: Omit<ReceiptProps, 'onClose'> & { logoUrl: str
     }
     thead th:nth-child(1) { text-align: left; }
     thead th:nth-child(2), thead th:nth-child(3), thead th:nth-child(4) { text-align: right; }
-    td { padding: 3px 0; border-bottom: 1px dotted #ddd; vertical-align: top; }
-    td.item-name { text-align: left; padding-right: 4px; max-width: 28mm; word-break: break-word; }
+    td { padding: 3px 0; border-bottom: 1px dotted #ddd; vertical-align: top; font-variant-numeric: tabular-nums; }
+    td.item-name { text-align: left; padding-right: 4px; max-width: 28mm; white-space: normal; word-break: break-word; }
     td.center { text-align: center; }
 
     /* Totals */
-    .total-row  { display: flex; justify-content: space-between; font-size: 11px; margin: 3px 0; }
-    .grand      { display: flex; justify-content: space-between; font-size: 15px; font-weight: 700; margin: 6px 0 3px; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 3px 0; }
-    .change-row { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; margin: 3px 0; }
+    .total-row  { display: flex; justify-content: space-between; font-size: 11px; margin: 3px 0; font-variant-numeric: tabular-nums; }
+    .grand      { display: flex; justify-content: space-between; font-size: 15px; font-weight: 700; margin: 6px 0 3px; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 3px 0; font-variant-numeric: tabular-nums; }
+    .change-row { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; margin: 3px 0; font-variant-numeric: tabular-nums; }
+    .change-row.warn { color: #cc0000; }
 
     /* Footer */
     .footer { text-align: center; font-size: 10px; color: #666; margin-top: 10px; line-height: 1.7; }
     .footer .tagline { font-size: 9px; letter-spacing: 2px; margin-top: 5px; color: #999; }
+    .disclaimer { font-size: 9px; font-weight: 600; color: #555; border-top: 1px dashed #bbb; margin-top: 8px; padding-top: 6px; line-height: 1.6; }
 
     @media print {
       body { padding: 0; }
+      * {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="header">
-      <img src="${data.logoUrl}" alt="Kurtland logo" class="header-logo" />
+      <img src="${data.logoUrl}" alt="Kurtland logo" class="header-logo" onerror="this.style.display='none'" />
       <div class="header-text">
         <p class="store-name">KURTLAND</p>
         <p class="store-sub">Canteen Management System</p>
       </div>
     </div>
     <hr class="dash" />
-    <div class="meta"><span>Transaction</span><span>${data.transactionId}</span></div>
-    <div class="meta"><span>Date &amp; Time</span><span>${data.timestamp}</span></div>
-    <div class="meta"><span>Cashier</span><span>${data.cashierName}</span></div>
+    <div class="meta"><span>Transaction</span><span>${escHtml(data.transactionId)}</span></div>
+    <div class="meta"><span>Date &amp; Time</span><span>${escHtml(data.timestamp)}</span></div>
+    <div class="meta"><span>Cashier</span><span>${escHtml(data.cashierName)}</span></div>
     <hr class="dash" />
     <p class="label">Order Items</p>
     <table>
@@ -163,12 +180,13 @@ function buildPrintDocument(data: Omit<ReceiptProps, 'onClose'> & { logoUrl: str
     <hr class="dash" />
     <div class="grand"><span>TOTAL</span><span>${fmt(data.total)}</span></div>
     <div class="total-row"><span>Amount Paid</span><span>${fmt(data.amountPaid)}</span></div>
-    <div class="change-row"><span>Change</span><span>${fmt(data.change)}</span></div>
+    <div class="change-row${insufficientPayment ? ' warn' : ''}"><span>${insufficientPayment ? 'INSUFFICIENT PAYMENT' : 'Change'}</span><span>${fmt(data.change)}</span></div>
     <hr class="dash" />
     <div class="footer">
       <p>Thank you for your purchase!</p>
       <p>Please come again.</p>
       <p class="tagline">✦ KEEP YOUR RECEIPT ✦</p>
+      <p class="disclaimer">Customer Copy Only<br />Not valid for official tax purposes</p>
     </div>
   </div>
 </body>
@@ -337,9 +355,15 @@ export default function Receipt({
                   <dt>Amount Paid</dt>
                   <dd className="font-semibold text-gray-800 tabular-nums">{fmt(amountPaid)}</dd>
                 </div>
-                <div className="flex justify-between items-center bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5">
-                  <dt className="font-medium text-emerald-700">Change</dt>
-                  <dd className="text-base font-black text-emerald-600 tabular-nums">{fmt(change)}</dd>
+                <div className={`flex justify-between items-center rounded-lg px-3 py-1.5 ${
+                    change < 0
+                      ? 'bg-red-50 border border-red-200'
+                      : 'bg-emerald-50 border border-emerald-200'
+                  }`}>
+                  <dt className={`font-medium ${change < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                    {change < 0 ? 'Insufficient Payment' : 'Change'}
+                  </dt>
+                  <dd className={`text-base font-black tabular-nums ${change < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmt(change)}</dd>
                 </div>
               </dl>
             </div>
@@ -351,6 +375,12 @@ export default function Receipt({
               <p className="text-[9px] text-gray-300 pt-1 tracking-[0.25em] font-mono">
                 ✦ KEEP YOUR RECEIPT ✦
               </p>
+              <div className="mt-2 border border-dashed border-gray-300 rounded-md px-3 py-1.5">
+                <p className="text-[10px] font-semibold text-gray-400 tracking-wide leading-snug">
+                  Customer Copy Only<br />
+                  Not valid for official tax purposes
+                </p>
+              </div>
             </div>
 
           </div>
