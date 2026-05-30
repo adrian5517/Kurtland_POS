@@ -7,6 +7,14 @@ function toNumber(value) {
   return Number(value)
 }
 
+function formatReceiptTimestamp(dateValue) {
+  return new Intl.DateTimeFormat('en-PH', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Manila',
+  }).format(new Date(dateValue))
+}
+
 function toReceiptOrder(order, items, cashierName) {
   return {
     transactionId: `ORD-${String(order.id).padStart(6, '0')}`,
@@ -20,7 +28,7 @@ function toReceiptOrder(order, items, cashierName) {
     amountPaid: toNumber(order.amount_paid),
     change: toNumber(order.change_amount),
     cashierName,
-    timestamp: new Date(order.created_at).toLocaleString(),
+    timestamp: formatReceiptTimestamp(order.created_at),
   }
 }
 
