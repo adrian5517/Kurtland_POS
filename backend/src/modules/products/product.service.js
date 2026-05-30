@@ -67,6 +67,13 @@ const normalizeProductPayload = (input) => {
     if (parsed !== undefined) normalized.isActive = parsed
   }
 
+  if (!('isDeleted' in normalized) && 'is_deleted' in normalized) {
+    normalized.isDeleted = parseBoolean(normalized.is_deleted)
+  } else if ('isDeleted' in normalized) {
+    const parsed = parseBoolean(normalized.isDeleted)
+    if (parsed !== undefined) normalized.isDeleted = parsed
+  }
+
   // ── Numeric fields ──────────────────────────────────────────────────────────
   if (!('srpPrice' in normalized) && 'srp_price' in normalized) {
     normalized.srpPrice = parseNumber(normalized.srp_price)
@@ -133,7 +140,7 @@ const productService = {
     // Without this guard a completely empty body would return 200 with no DB write.
     const knownFields = [
       'name', 'category', 'price', 'srpPrice', 'minStock',
-      'quantity', 'isActive', 'imageUrl', 'imagePublicId',
+      'quantity', 'isActive', 'isDeleted', 'imageUrl', 'imagePublicId',
     ]
     const hasUpdate = knownFields.some((k) => k in parsed.data && parsed.data[k] !== undefined)
     if (!hasUpdate) {

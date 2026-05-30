@@ -34,6 +34,10 @@ const createProductSchema = z.object({
  */
 const updateProductSchema = createProductSchema
   .omit({ sku: true })
+  .extend({
+    // is_deleted column in DB. Update-only field for soft delete/restore flows.
+    isDeleted: z.boolean().optional(),
+  })
   .partial()
   .passthrough()
 
