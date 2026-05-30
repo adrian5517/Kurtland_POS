@@ -11,7 +11,7 @@ import {
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ArrowUpDown,
   ArrowUp, ArrowDown, Filter, RefreshCw, TrendingDown, ShieldAlert,
   CheckCircle2, SlidersHorizontal, EyeOff, Eye, TrendingUp, BarChart3,
-  Check, UserMinus, Users, MoreHorizontal
+  Check, UserMinus, Users, MoreHorizontal, RotateCcw
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -268,6 +268,8 @@ export default function InventoryPage() {
   const [distributionProducts, setDistributionProducts] = useState<InventoryItem[]>([])
   const [cashiers, setCashiers] = useState<Array<{ id: number; email: string }>>([])
   const [selectedCashiers, setSelectedCashiers] = useState<Set<number>>(new Set())
+  const [distributionQuantities, setDistributionQuantities] = useState<Record<number, string>>({})
+  const [cashierAllocations, setCashierAllocations] = useState<Record<number, number>>({})
   const [isLoadingCashiers, setIsLoadingCashiers] = useState(false)
   const [isDistributing, setIsDistributing] = useState(false)
 
@@ -633,6 +635,7 @@ export default function InventoryPage() {
     setIsLoadingCashiers(true)
     setSelectedCashiers(new Set())
     setCurrentAssignments(new Set())
+    setCashierAllocations({})
 
     const session = getAuthSession()
     if (!session?.token) {
@@ -663,9 +666,14 @@ export default function InventoryPage() {
         const assignRes = await apiFetch(`/api/products/${pid}/cashiers`, { headers })
         const assignData = await assignRes.json()
         if (assignRes.ok && Array.isArray(assignData.data)) {
-          const assigned = new Set<number>(assignData.data)
+          // API now returns [{ cashier_id, distributed_quantity }]
+          const rows: { cashier_id: number; distributed_quantity: number }[] = assignData.data
+          const assigned = new Set<number>(rows.map(r => r.cashier_id))
+          const allocs: Record<number, number> = {}
+          for (const r of rows) allocs[r.cashier_id] = r.distributed_quantity
           setCurrentAssignments(assigned)
           setSelectedCashiers(assigned)
+          setCashierAllocations(allocs)
         }
       }
     } catch (error) {
@@ -687,6 +695,8 @@ export default function InventoryPage() {
     managedProductIdRef.current = product.id
     setDistributionProduct(product)
     setDistributionProducts([product])
+    setDistributionQuantities({})
+    setCashierAllocations({})
     setShowDistributionModal(true)
     // fetchCashiers (triggered by useEffect) will also pre-load current assignments via managedProductIdRef
   }
@@ -716,34 +726,63 @@ export default function InventoryPage() {
       return
     }
 
+    // Validate quantities when distributing (not in pure manage/assign mode)
+    const hasAnyQuantity = Object.values(distributionQuantities).some(q => q && parseInt(q, 10) > 0)
+    const cashierIds = Array.from(selectedCashiers)
+
+    // Over-allocation guard (single-product only)
+    if (hasAnyQuantity && productsToDistribute.length === 1) {
+      const totalStock = productsToDistribute[0].currentStock ?? 0
+      const pendingTotal = cashierIds.reduce((s, cid) => {
+        const inputVal = distributionQuantities[cid]
+        if (inputVal !== undefined && inputVal !== '') return s + (parseInt(inputVal, 10) || 0)
+        if (currentAssignments.has(cid)) return s + (cashierAllocations[cid] ?? 0)
+        return s
+      }, 0)
+      if (pendingTotal > totalStock) {
+        toast.error(`Total quantity (${pendingTotal}) exceeds available stock (${totalStock})`)
+        return
+      }
+    }
+
     const session = getAuthSession()
     if (!session?.token) {
-      console.error('❌ No session token')
       toast.error('Please sign in again')
       return
     }
 
     setIsDistributing(true)
     try {
-      const cashierIds = Array.from(selectedCashiers)
-      console.log('📦 Distributing products:', productsToDistribute.map(p => p.name).join(', '), 'to cashiers:', cashierIds)
-      
-      // Distribute each product to the selected cashiers
       for (const product of productsToDistribute) {
-        const payload = { cashierIds }
-        console.log('📡 POST /api/products/' + product.id + '/assign-cashiers', payload)
-        
-        const response = await apiFetch(`/api/products/${product.id}/assign-cashiers`, {
-          method: 'POST',
-          headers: { ...Object.fromEntries(apiHeaders(session.token).entries()), 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
+        if (hasAnyQuantity) {
+          // Distribute with quantities — only selected cashiers that have a quantity > 0
+          const distributions = cashierIds
+            .map(cid => ({ cashierId: cid, quantity: parseInt(distributionQuantities[cid] || '0', 10) }))
+            .filter(d => d.quantity > 0)
 
-        const responseData = await response.json()
-        console.log('✓ Distribution response:', { ok: response.ok, data: responseData })
-        
-        if (!response.ok) {
-          throw new Error(responseData?.message || `Failed to distribute ${product.name}`)
+          if (distributions.length === 0) {
+            toast.error('Enter a quantity for at least one cashier')
+            setIsDistributing(false)
+            return
+          }
+
+          const response = await apiFetch(`/api/products/${product.id}/distribute`, {
+            method: 'POST',
+            headers: { ...Object.fromEntries(apiHeaders(session.token).entries()), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ distributions }),
+          })
+          const responseData = await response.json()
+          if (!response.ok) throw new Error(responseData?.message || `Failed to distribute ${product.name}`)
+        } else {
+          // Assign only (no quantities specified) — existing assign-cashiers flow
+          const payload = { cashierIds }
+          const response = await apiFetch(`/api/products/${product.id}/assign-cashiers`, {
+            method: 'POST',
+            headers: { ...Object.fromEntries(apiHeaders(session.token).entries()), 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          const responseData = await response.json()
+          if (!response.ok) throw new Error(responseData?.message || `Failed to assign ${product.name}`)
         }
       }
 
@@ -751,15 +790,19 @@ export default function InventoryPage() {
       setDistributionProduct(null)
       setDistributionProducts([])
       setSelectedCashiers(new Set())
+      setDistributionQuantities({})
+      setCashierAllocations({})
       setCurrentAssignments(new Set())
       managedProductIdRef.current = null
       const productsCount = productsToDistribute.length
       const productNames = productsCount === 1 ? productsToDistribute[0].name : `${productsCount} products`
-      toast.success(isManageMode
+      toast.success(hasAnyQuantity
+        ? `✓ ${productNames} distributed with quantities to ${cashierIds.filter(c => (parseInt(distributionQuantities[c] || '0', 10)) > 0).length} cashier(s)`
+        : isManageMode
         ? `✓ ${productNames} assignments updated`
-        : `✓ ${productNames} assigned to ${selectedCashiers.size} cashier(s)`)
+        : `✓ ${productNames} assigned to ${selectedCashiers.size} cashier(s)`
+      )
     } catch (error) {
-      console.error('❌ Error in handleDistributeProduct:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to distribute product')
     } finally {
       setIsDistributing(false)
@@ -781,9 +824,31 @@ export default function InventoryPage() {
       // Optimistic UI update
       setCurrentAssignments(prev => { const n = new Set(prev); n.delete(cashierId); return n })
       setSelectedCashiers(prev => { const n = new Set(prev); n.delete(cashierId); return n })
+      setCashierAllocations(prev => { const n = { ...prev }; delete n[cashierId]; return n })
       toast.success(`Removed ${cashierEmail} from this product`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to remove assignment')
+    }
+  }
+
+  // Zero-out a cashier's distributed quantity without removing the assignment
+  const handleZeroOutCashierQty = async (productId: string, cashierId: number, cashierEmail: string) => {
+    const session = getAuthSession()
+    if (!session?.token) { toast.error('Please sign in again'); return }
+    try {
+      const res = await apiFetch(`/api/products/${productId}/distribute`, {
+        method: 'POST',
+        headers: { ...Object.fromEntries(apiHeaders(session.token).entries()), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ distributions: [{ cashierId, quantity: 0 }] }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        throw new Error(body?.message || 'Failed to undistribute')
+      }
+      setCashierAllocations(prev => ({ ...prev, [cashierId]: 0 }))
+      toast.success(`Undistributed stock for ${cashierEmail}`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to undistribute')
     }
   }
 
@@ -1571,6 +1636,35 @@ export default function InventoryPage() {
                       : <>Assign <span className="font-semibold text-foreground">{distributeDisplayName}</span> to cashiers</>
                     }
                   </p>
+                  {/* Available stock pill — single product only */}
+                  {(distributionProduct || distributionProducts.length === 1) && (() => {
+                    const prod = distributionProduct ?? distributionProducts[0]
+                    const totalStock = prod.currentStock ?? 0
+                    // Pending total: new inputs + unchanged existing allocations
+                    const pendingTotal = (() => {
+                      let sum = 0
+                      for (const cashier of cashiers) {
+                        const inputVal = distributionQuantities[cashier.id]
+                        if (inputVal !== undefined && inputVal !== '') {
+                          sum += parseInt(inputVal, 10) || 0
+                        } else if (currentAssignments.has(cashier.id) && selectedCashiers.has(cashier.id)) {
+                          sum += cashierAllocations[cashier.id] ?? 0
+                        }
+                      }
+                      return sum
+                    })()
+                    const available = totalStock - pendingTotal
+                    return (
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <span className="text-[11px] text-muted-foreground">
+                          Total stock: <span className="font-semibold text-foreground">{totalStock}</span>
+                        </span>
+                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${available < 0 ? 'bg-red-100 text-red-600 dark:bg-red-950/30' : available === 0 ? 'bg-amber-100 text-amber-600 dark:bg-amber-950/30' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30'}`}>
+                          {available >= 0 ? `${available} available` : `${Math.abs(available)} over-allocated`}
+                        </span>
+                      </div>
+                    )
+                  })()}
                 </div>
                 <button
                   onClick={() => {
@@ -1578,6 +1672,8 @@ export default function InventoryPage() {
                     setDistributionProduct(null)
                     setDistributionProducts([])
                     setSelectedCashiers(new Set())
+                    setDistributionQuantities({})
+                    setCashierAllocations({})
                     setCurrentAssignments(new Set())
                     managedProductIdRef.current = null
                   }}
@@ -1609,6 +1705,7 @@ export default function InventoryPage() {
                         const cashier = cashiers.find(c => c.id === cid)
                         if (!cashier) return null
                         const willRemoveThis = !selectedCashiers.has(cid)
+                        const allocatedQty = cashierAllocations[cid] ?? 0
                         return (
                           <div
                             key={cid}
@@ -1618,14 +1715,31 @@ export default function InventoryPage() {
                                 : 'bg-primary/10 border-primary/20 text-primary'
                             }`}
                           >
-                            <span className="max-w-[150px] truncate">{cashier.email}</span>
+                            <span className="max-w-[120px] truncate">{cashier.email}</span>
+                            {/* Allocated quantity badge */}
+                            {!willRemoveThis && (
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${allocatedQty > 0 ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                                {allocatedQty > 0 ? `${allocatedQty} units` : 'no qty'}
+                              </span>
+                            )}
                             {willRemoveThis && (
                               <span className="text-[9px] font-bold uppercase opacity-70">Removing</span>
                             )}
+                            {/* Undistribute (zero out qty) button — only when has qty */}
+                            {!willRemoveThis && allocatedQty > 0 && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleZeroOutCashierQty(distributionProducts[0]?.id ?? distributionProduct!.id, cashier.id, cashier.email) }}
+                                className="hover:opacity-60 transition-opacity shrink-0 text-amber-600"
+                                title={`Undistribute stock for ${cashier.email}`}
+                              >
+                                <RotateCcw className="h-3 w-3" />
+                              </button>
+                            )}
+                            {/* Remove assignment button */}
                             <button
-                              onClick={() => handleUndistributeCashier(distributionProducts[0].id, cashier.id, cashier.email)}
+                              onClick={() => handleUndistributeCashier(distributionProducts[0]?.id ?? distributionProduct!.id, cashier.id, cashier.email)}
                               className="hover:opacity-60 transition-opacity shrink-0"
-                              title={`Immediately remove ${cashier.email}`}
+                              title={`Remove ${cashier.email} from this product`}
                             >
                               <X className="h-3 w-3" />
                             </button>
@@ -1641,10 +1755,27 @@ export default function InventoryPage() {
 
               {/* Cashier selection list */}
               <div className="space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                  <Users className="h-3 w-3" />
-                  {isManageMode ? 'Assign or Remove Cashiers' : 'Select Cashiers'}
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                    <Users className="h-3 w-3" />
+                    {isManageMode ? 'Assign or Remove Cashiers' : 'Select Cashiers'}
+                  </p>
+                  {!isLoadingCashiers && cashiers.length > 0 && (
+                    <button
+                      onClick={() => {
+                        if (selectedCashiers.size === cashiers.length) {
+                          setSelectedCashiers(new Set())
+                          setDistributionQuantities({})
+                        } else {
+                          setSelectedCashiers(new Set(cashiers.map(c => c.id)))
+                        }
+                      }}
+                      className="text-[10px] font-semibold text-primary hover:underline"
+                    >
+                      {selectedCashiers.size === cashiers.length ? 'Remove All' : 'Add All'}
+                    </button>
+                  )}
+                </div>
                 {isLoadingCashiers ? (
                   <div className="space-y-2">
                     {[1, 2, 3].map(i => (
@@ -1689,6 +1820,39 @@ export default function InventoryPage() {
                             {isSelected && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
                           </div>
                           <span className="text-sm font-medium flex-1 min-w-0 truncate">{cashier.email}</span>
+                          {/* Quantity input — shown when cashier is selected */}
+                          {isSelected && (() => {
+                            const prod = distributionProduct ?? distributionProducts[0] ?? null
+                            const totalStock = prod?.currentStock ?? Infinity
+                            // Running total of all other cashiers' pending qtys
+                            const otherTotal = Array.from(selectedCashiers)
+                              .filter(cid => cid !== cashier.id)
+                              .reduce((s, cid) => {
+                                const inputVal = distributionQuantities[cid]
+                                if (inputVal !== undefined && inputVal !== '') return s + (parseInt(inputVal, 10) || 0)
+                                if (currentAssignments.has(cid)) return s + (cashierAllocations[cid] ?? 0)
+                                return s
+                              }, 0)
+                            const maxForThis = Math.max(0, totalStock - otherTotal)
+                            const thisVal = parseInt(distributionQuantities[cashier.id] || '0', 10)
+                            const isOver = thisVal > maxForThis
+                            return (
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                max={totalStock === Infinity ? undefined : maxForThis}
+                                placeholder="Qty"
+                                value={distributionQuantities[cashier.id] ?? ''}
+                                onChange={(e) => {
+                                  e.stopPropagation()
+                                  setDistributionQuantities(prev => ({ ...prev, [cashier.id]: e.target.value }))
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className={`w-16 h-7 text-xs text-center border rounded-md bg-background font-semibold shrink-0 focus:outline-none focus:ring-1 ${isOver ? 'border-red-500 ring-red-300 text-red-600' : 'focus:ring-primary'}`}
+                              />
+                            )
+                          })()}
                           {/* Status pills — manage mode only */}
                           {isManageMode && willRemove && (
                             <span className="text-[10px] font-bold bg-red-100 dark:bg-red-900/30 text-red-600 px-2 py-0.5 rounded-full shrink-0">
@@ -1712,30 +1876,79 @@ export default function InventoryPage() {
                 )}
               </div>
 
-              {/* Change summary */}
-              {!isLoadingCashiers && (distributeAddCount > 0 || distributeRemoveCount > 0) && (
-                <div className="flex items-center gap-4 px-0.5">
-                  {distributeAddCount > 0 && (
-                    <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
-                      <Check className="h-3 w-3" />
-                      {distributeAddCount} to assign
-                    </span>
-                  )}
-                  {distributeRemoveCount > 0 && (
-                    <span className="flex items-center gap-1.5 text-xs text-red-600 font-semibold">
-                      <UserMinus className="h-3 w-3" />
-                      {distributeRemoveCount} to remove
-                    </span>
-                  )}
-                </div>
-              )}
+              {/* Change / qty summary */}
+              {!isLoadingCashiers && selectedCashiers.size > 0 && (() => {
+                const totalQty = Array.from(selectedCashiers).reduce((s, cid) => s + (parseInt(distributionQuantities[cid] || '0', 10)), 0)
+                return (
+                  <div className="flex items-center flex-wrap gap-3 px-0.5">
+                    {distributeAddCount > 0 && (
+                      <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
+                        <Check className="h-3 w-3" />
+                        {distributeAddCount} to assign
+                      </span>
+                    )}
+                    {distributeRemoveCount > 0 && (
+                      <span className="flex items-center gap-1.5 text-xs text-red-600 font-semibold">
+                        <UserMinus className="h-3 w-3" />
+                        {distributeRemoveCount} to remove
+                      </span>
+                    )}
+                    {totalQty > 0 && (
+                      <span className="flex items-center gap-1.5 text-xs text-primary font-semibold ml-auto">
+                        <Package className="h-3 w-3" />
+                        {totalQty} total units to distribute
+                      </span>
+                    )}
+                  </div>
+                )
+              })()}
             </CardContent>
 
             {/* Footer */}
-            <div className="shrink-0 px-6 py-4 border-t bg-muted/20 flex gap-2">
+            <div className="shrink-0 px-6 py-4 border-t bg-muted/20 flex flex-col gap-2">
+              {/* Over-allocation warning */}
+              {(() => {
+                const prod = distributionProduct ?? distributionProducts[0] ?? null
+                if (!prod) return null
+                const totalStock = prod.currentStock ?? 0
+                const pendingTotal = (() => {
+                  let sum = 0
+                  for (const cashier of cashiers) {
+                    const inputVal = distributionQuantities[cashier.id]
+                    if (inputVal !== undefined && inputVal !== '') {
+                      sum += parseInt(inputVal, 10) || 0
+                    } else if (currentAssignments.has(cashier.id) && selectedCashiers.has(cashier.id)) {
+                      sum += cashierAllocations[cashier.id] ?? 0
+                    }
+                  }
+                  return sum
+                })()
+                if (pendingTotal <= totalStock) return null
+                return (
+                  <p className="text-xs text-red-600 font-semibold flex items-center gap-1.5 bg-red-50 dark:bg-red-950/20 rounded-lg px-3 py-2">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    Total qty ({pendingTotal}) exceeds stock ({totalStock}) — reduce quantities before saving.
+                  </p>
+                )
+              })()}
+              <div className="flex gap-2">
               <Button
                 onClick={handleDistributeProduct}
-                disabled={isDistributing || (!isManageMode && selectedCashiers.size === 0)}
+                disabled={isDistributing || (!isManageMode && selectedCashiers.size === 0) || (() => {
+                  const prod = distributionProduct ?? distributionProducts[0] ?? null
+                  if (!prod) return false
+                  const totalStock = prod.currentStock ?? 0
+                  let pendingTotal = 0
+                  for (const cashier of cashiers) {
+                    const inputVal = distributionQuantities[cashier.id]
+                    if (inputVal !== undefined && inputVal !== '') {
+                      pendingTotal += parseInt(inputVal, 10) || 0
+                    } else if (currentAssignments.has(cashier.id) && selectedCashiers.has(cashier.id)) {
+                      pendingTotal += cashierAllocations[cashier.id] ?? 0
+                    }
+                  }
+                  return pendingTotal > totalStock
+                })()}
                 className="flex-1 rounded-xl"
               >
                 {isDistributing ? (
@@ -1754,6 +1967,8 @@ export default function InventoryPage() {
                   setDistributionProduct(null)
                   setDistributionProducts([])
                   setSelectedCashiers(new Set())
+                  setDistributionQuantities({})
+                  setCashierAllocations({})
                   setCurrentAssignments(new Set())
                   managedProductIdRef.current = null
                 }}
@@ -1763,6 +1978,7 @@ export default function InventoryPage() {
               >
                 Cancel
               </Button>
+              </div>
             </div>
           </Card>
         </div>
@@ -1848,6 +2064,7 @@ export default function InventoryPage() {
                     console.log('📋 Selected products to distribute:', selectedProducts.map(p => p.name))
                     setDistributionProducts(selectedProducts)
                     setDistributionProduct(null)
+                    setDistributionQuantities({})
                     setShowDistributionModal(true)
                     setShowProductSelector(false)
                     setDistributionSearch('')

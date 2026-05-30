@@ -162,11 +162,12 @@ const productRepository = {
     return result.rows[0] || null
   },
 
-  // 5. Get products assigned to a specific cashier
+  // 5. Get products assigned to a specific cashier (returns distributed_quantity as the cashier's stock)
   async findByCashierId(cashierId) {
     const result = await db.query(
-      `SELECT p.id, p.name, p.sku, p.category, p.price::text, p.srp_price::text, p.min_stock, 
-              p.quantity, p.is_active, p.image_url, p.image_public_id, p.created_at::text
+      `SELECT p.id, p.name, p.sku, p.category, p.price::text, p.srp_price::text, p.min_stock,
+              pca.distributed_quantity AS quantity,
+              p.is_active, p.image_url, p.image_public_id, p.created_at::text
        FROM products p
        INNER JOIN product_cashier_assignments pca ON p.id = pca.product_id
        WHERE pca.cashier_id = $1 AND p.is_deleted = false
@@ -188,6 +189,34 @@ const productRepository = {
     return result.rows[0] || null
   },
 
+  // 6b. Distribute product to multiple cashiers with specific quantities (sets allocated stock per cashier)
+  async distributeWithQuantity(productId, distributions) {
+    // distributions = Array<{ cashierId: number, quantity: number }>
+    const client = await db.connect()
+    try {
+      await client.query('BEGIN')
+      const results = []
+      for (const { cashierId, quantity } of distributions) {
+        const row = await client.query(
+          `INSERT INTO product_cashier_assignments (product_id, cashier_id, distributed_quantity, created_at)
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (product_id, cashier_id)
+           DO UPDATE SET distributed_quantity = $3
+           RETURNING id, distributed_quantity`,
+          [productId, cashierId, quantity],
+        )
+        results.push({ cashierId, ...row.rows[0] })
+      }
+      await client.query('COMMIT')
+      return results
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
+  },
+
   // 7. Remove product from cashier
   async removeFromCashier(productId, cashierId) {
     const result = await db.query(
@@ -199,14 +228,14 @@ const productRepository = {
     return result.rows[0] || null
   },
 
-  // 8. Get all cashiers assigned to a product
+  // 8. Get all cashiers assigned to a product (includes distributed_quantity per cashier)
   async getCashiersForProduct(productId) {
     const result = await db.query(
-      `SELECT DISTINCT cashier_id FROM product_cashier_assignments
+      `SELECT cashier_id, distributed_quantity FROM product_cashier_assignments
        WHERE product_id = $1`,
       [productId],
     )
-    return result.rows.map(row => row.cashier_id)
+    return result.rows // [{ cashier_id, distributed_quantity }]
   },
 
   // 9. Get all cashiers (from users table)

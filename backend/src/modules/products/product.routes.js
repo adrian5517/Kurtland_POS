@@ -20,6 +20,7 @@ productRouter.put('/:id', requireRole('admin'), productController.update)
 productRouter.delete('/:id', requireRole('admin'), productController.destroy)
 productRouter.get('/:id/cashiers', requireRole('admin'), productController.getCashiersForProduct)
 productRouter.post('/:id/assign-cashiers', requireRole('admin'), productController.assignProductToCashiers)
+productRouter.post('/:id/distribute', requireRole('admin'), productController.distributeProducts)
 productRouter.delete('/:id/cashiers/:cashierId', requireRole('admin'), productController.removeSingleCashier)
 
 module.exports = { productRouter }

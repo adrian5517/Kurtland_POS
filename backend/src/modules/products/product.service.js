@@ -178,9 +178,9 @@ const productService = {
 
   async assignProductToCashiers(productId, cashierIds) {
     // First, remove all existing assignments for this product
-    const existingCashiers = await productRepository.getCashiersForProduct(productId)
-    for (const cashierId of existingCashiers) {
-      await productRepository.removeFromCashier(productId, cashierId)
+    const existingRows = await productRepository.getCashiersForProduct(productId)
+    for (const row of existingRows) {
+      await productRepository.removeFromCashier(productId, row.cashier_id)
     }
 
     // Then, assign to the new set of cashiers
@@ -199,6 +199,24 @@ const productService = {
 
   async getCashierAnalytics() {
     return await productRepository.getCashierAnalytics()
+  },
+
+  async distributeProducts(productId, distributions) {
+    if (!Array.isArray(distributions) || distributions.length === 0) {
+      throw new HttpError(400, 'distributions must be a non-empty array')
+    }
+    for (const d of distributions) {
+      const cashierId = Number(d.cashierId)
+      const quantity = Number(d.quantity)
+      if (!Number.isInteger(cashierId) || cashierId <= 0) {
+        throw new HttpError(400, `Invalid cashier ID: ${d.cashierId}`)
+      }
+      if (!Number.isInteger(quantity) || quantity < 0) {
+        throw new HttpError(400, `Quantity must be a non-negative integer for cashier ${cashierId}`)
+      }
+    }
+    const normalised = distributions.map(d => ({ cashierId: Number(d.cashierId), quantity: Number(d.quantity) }))
+    return productRepository.distributeWithQuantity(productId, normalised)
   },
 }
 

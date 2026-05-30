@@ -108,6 +108,7 @@ async function bootstrapDatabase() {
   `)
   await db.query('CREATE INDEX IF NOT EXISTS idx_product_cashier_product ON product_cashier_assignments(product_id)')
   await db.query('CREATE INDEX IF NOT EXISTS idx_product_cashier_cashier ON product_cashier_assignments(cashier_id)')
+  await db.query('ALTER TABLE product_cashier_assignments ADD COLUMN IF NOT EXISTS distributed_quantity INTEGER NOT NULL DEFAULT 0')
 
   // Budget request system
   await db.query(`

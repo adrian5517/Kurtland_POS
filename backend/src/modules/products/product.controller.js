@@ -9,10 +9,9 @@ const productController = {
       // Fetch products based on user role
       let products = await productService.listProducts()
 
-      // If user is a cashier, filter to only assigned products
+      // If user is a cashier, return only their assigned products with distributed quantities
       if (userRole === 'cashier' && userId) {
-        const assignedProducts = await productService.getProductsByCashier(userId)
-        products = products.filter(p => assignedProducts.some(ap => ap.id === p.id))
+        products = await productService.getProductsByCashier(userId)
       }
 
       const enrichedProducts = products.map((product) => {
@@ -147,6 +146,20 @@ const productController = {
       }
       await productService.removeSingleCashier(productId, cashierId)
       return res.status(204).send()
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async distributeProducts(req, res, next) {
+    try {
+      const productId = Number(req.params.id)
+      if (!Number.isInteger(productId) || productId <= 0) {
+        return res.status(400).json({ error: 'Invalid product ID' })
+      }
+      const { distributions } = req.body
+      const result = await productService.distributeProducts(productId, distributions)
+      return res.json({ data: result, message: 'Product distributed to cashiers' })
     } catch (error) {
       next(error)
     }
