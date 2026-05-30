@@ -117,6 +117,7 @@ const productRepository = {
     pushField('min_stock', input.minStock !== undefined ? input.minStock : input.min_stock)
     pushField('quantity', input.quantity)
     pushField('is_active', input.isActive !== undefined ? input.isActive : input.is_active)      // 💡 Dinagdag para sa toggle action updates
+    pushField('is_deleted', input.isDeleted !== undefined ? input.isDeleted : input.is_deleted)
 
     if (Object.prototype.hasOwnProperty.call(input, 'imageUrl') || Object.prototype.hasOwnProperty.call(input, 'image_url')) {
       pushField('image_url', input.imageUrl !== undefined ? input.imageUrl : input.image_url)
