@@ -1,7 +1,5 @@
 const { Router } = require('express')
 
-// NOTE: For test automation we temporarily allow unauthenticated product creation.
-// Remove or revert this change in production. Auth middleware is defined in middleware/auth.js
 const { requireAuth, requireRole } = require('../../middleware/auth')
 const { productController } = require('./product.controller')
 

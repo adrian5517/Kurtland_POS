@@ -83,7 +83,6 @@ async function createCoreTables() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(product_id, cashier_id)
     );
-  await db.query('ALTER TABLE product_cashier_assignments ADD COLUMN IF NOT EXISTS distributed_quantity INTEGER NOT NULL DEFAULT 0')
 
     CREATE TABLE IF NOT EXISTS budget_requests (
       id SERIAL PRIMARY KEY,
@@ -122,6 +121,7 @@ async function ensureSchemaCompatibility() {
   await db.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS min_stock INTEGER NOT NULL DEFAULT 5')
   await db.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true')
   await db.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT false')
+  await db.query('ALTER TABLE product_cashier_assignments ADD COLUMN IF NOT EXISTS distributed_quantity INTEGER NOT NULL DEFAULT 0')
 }
 
 async function createIndexes() {
@@ -168,7 +168,7 @@ async function seedDefaultAdminUser() {
      ON CONFLICT (email) DO NOTHING`,
     ['admin@kurt-land.com', hashedPassword, 'Admin User', 'admin'],
   )
-  console.log('✓ Default admin user created: admin@kurt-land.com / admin123')
+  console.log('✓ Default admin user created: admin@kurt-land.com (change the password immediately)')
 }
 
 async function repairSkuCounters() {
@@ -204,7 +204,7 @@ async function seedDemoUsers() {
        VALUES ($1, $2, $3, $4)`,
       ['admin@kurtland.com', hashedAdminPassword, 'System Admin', 'admin'],
     )
-    console.log('✓ Seeded admin user: admin@kurtland.com / password: admin')
+    console.log('✓ Seeded admin user: admin@kurtland.com (change the password immediately)')
   }
 
   const { rows: cashierRows } = await db.query('SELECT id FROM users WHERE role = $1', ['cashier'])
@@ -223,7 +223,7 @@ async function seedDemoUsers() {
        VALUES ($1, $2, $3, $4)`,
       [email, hashedCashierPassword, name, 'cashier'],
     )
-    console.log(`✓ Seeded cashier user: ${email} / password: cashier123`)
+    console.log(`✓ Seeded cashier user: ${email} (change the password immediately)`)
   }
 }
 

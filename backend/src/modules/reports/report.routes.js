@@ -1,33 +1,13 @@
 const { Router } = require('express')
-const { reportController } = require('./report.controller') 
-const { verifyToken } = require('../../middleware/auth') 
+const { requireAuth, requireRole } = require('../../middleware/auth')
+const { reportController } = require('./report.controller')
 
-// 1. Safe require fallback to prevent crashing if the file path is completely missing
-let authMiddleware;
-try {
-  authMiddleware = require('../../middleware/auth');
-} catch (e) {
-  console.error("⚠️ WARNING: Could not resolve auth.middleware path. Bypassing token verification for now.");
-}
+const reportRouter = Router()
 
-const reportRouter = Router();
+reportRouter.use(requireAuth)
+reportRouter.use(requireRole('admin'))
 
-// 2. Destructured inline fallback assignment
-const finalVerifyToken = (authMiddleware && authMiddleware.verifyToken) 
-  ? authMiddleware.verifyToken 
-  : (req, res, next) => next();
+reportRouter.get('/sales', reportController.getSalesReport.bind(reportController))
+reportRouter.get('/cashier-performance', reportController.getCashierPerformance.bind(reportController))
 
-// 3. Fallback controller verification
-const salesHandler = (reportController && reportController.getSalesReport)
-  ? reportController.getSalesReport.bind(reportController)
-  : (req, res) => res.status(500).json({ error: "getSalesReport controller method is missing" });
-
-const cashierPerfHandler = (reportController && reportController.getCashierPerformance)
-  ? reportController.getCashierPerformance.bind(reportController)
-  : (req, res) => res.status(500).json({ error: "getCashierPerformance controller method is missing" });
-
-// 4. Bind routes
-reportRouter.get('/sales', finalVerifyToken, salesHandler);
-reportRouter.get('/cashier-performance', finalVerifyToken, cashierPerfHandler);
-
-module.exports = { reportRouter };
+module.exports = { reportRouter }

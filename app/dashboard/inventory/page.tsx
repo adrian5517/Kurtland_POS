@@ -220,18 +220,10 @@ export default function InventoryPage() {
 
   useEffect(() => {
     const session = getAuthSession()
-    console.log('🔐 Auth session:', session)
     const role = (session as any)?.role ?? (session as any)?.user?.role ?? ''
-    console.log('👤 User role:', role)
     const adminStatus = role === 'admin' || role === 'ADMIN' || role === 'superadmin'
-    console.log('👑 Is admin:', adminStatus)
     setIsAdmin(adminStatus)
   }, [])
-
-  // Log when isAdmin changes
-  useEffect(() => {
-    console.log('✅ isAdmin state updated:', isAdmin)
-  }, [isAdmin])
 
   const [inventory, setInventory] = useState<InventoryItem[]>([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -615,21 +607,7 @@ export default function InventoryPage() {
     }
   }
 
-  // Log when product selector modal opens/closes
-  useEffect(() => {
-    console.log('🎪 Product selector modal:', showProductSelector ? 'OPENED' : 'closed')
-  }, [showProductSelector])
 
-  // Log when distribution modal opens/closes
-  useEffect(() => {
-    if (showDistributionModal) {
-      console.log('🎬 Distribution modal OPENED', {
-        hasProduct: !!distributionProduct?.name,
-        hasProducts: distributionProducts.length,
-        productNames: distributionProducts.map(p => p.name)
-      })
-    }
-  }, [showDistributionModal])
 
   const fetchCashiers = useCallback(async () => {
     setIsLoadingCashiers(true)
@@ -717,7 +695,6 @@ export default function InventoryPage() {
     const productsToDistribute = distributionProducts.length > 0 ? distributionProducts : (distributionProduct ? [distributionProduct] : [])
     
     if (productsToDistribute.length === 0) {
-      console.error('❌ No products selected')
       return
     }
 
@@ -884,7 +861,6 @@ export default function InventoryPage() {
           {isAdmin && (
             <Button
               onClick={() => {
-                console.log('🎯 Distribute button clicked (from toolbar)')
                 setShowProductSelector(true)
                 setDistributionSearch('')
               }}
@@ -2055,13 +2031,11 @@ export default function InventoryPage() {
               <div className="flex gap-2">
                 <Button
                   onClick={() => {
-                    console.log('🔷 Distribute Selected button clicked, selectedDistributionProducts:', Array.from(selectedDistributionProducts))
                     if (selectedDistributionProducts.size === 0) {
                       toast.error('Please select at least one product')
                       return
                     }
                     const selectedProducts = inventory.filter(p => selectedDistributionProducts.has(p.id))
-                    console.log('📋 Selected products to distribute:', selectedProducts.map(p => p.name))
                     setDistributionProducts(selectedProducts)
                     setDistributionProduct(null)
                     setDistributionQuantities({})

@@ -11,7 +11,7 @@ import {
   Lock, LogOut, User, ShieldCheck, Eye, EyeOff,
   RefreshCw, CheckCircle2, Clock, Info, Pencil,
 } from 'lucide-react'
-import { getAuthSession, clearAuthSession, isTokenExpired, type AuthSession } from '@/lib/auth'
+import { getAuthSession, saveAuthSession, clearAuthSession, isTokenExpired, type AuthSession } from '@/lib/auth'
 import { apiFetch, apiHeaders } from '@/lib/api'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -124,9 +124,8 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error()
       const { data } = await res.json()
       const updated: AuthSession = { ...current, user: { ...current.user, ...data } }
-      window.localStorage.setItem('kurtland-auth', JSON.stringify(updated))
+      saveAuthSession(updated)
       setSession(updated)
-      toast.success('Profile refreshed')
     } catch {
       toast.error('Could not refresh profile')
     } finally {
@@ -201,7 +200,7 @@ export default function SettingsPage() {
       const body = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(body?.message || 'Failed to update profile')
       const updated: AuthSession = { ...current, user: { ...current.user, ...body.data } }
-      window.localStorage.setItem('kurtland-auth', JSON.stringify(updated))
+      saveAuthSession(updated)
       setSession(updated)
       toast.success('Profile updated successfully')
     } catch (error) {

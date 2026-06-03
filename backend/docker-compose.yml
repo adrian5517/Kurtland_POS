@@ -22,7 +22,7 @@ services:
       NODE_ENV: development
       PORT: 4000
       DATABASE_URL: postgresql://postgres:postgres@db:5432/kurt_land_pos
-      JWT_SECRET: dev-secret-change-me
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET env var must be set}
       CLOUDINARY_URL: ${CLOUDINARY_URL:-}
     ports:
       - "4000:4000"

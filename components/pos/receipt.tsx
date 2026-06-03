@@ -63,9 +63,9 @@ function buildPrintDocument(data: Omit<ReceiptProps, 'onClose'> & { logoUrl: str
       (item) => `
       <tr>
         <td class="item-name">${escHtml(item.name)}</td>
-        <td class="num center">${item.quantity}</td>
-        <td class="num right">${fmt(item.price)}</td>
-        <td class="num right bold">${fmt(item.subtotal)}</td>
+        <td class="item-qty">${item.quantity}</td>
+        <td class="item-price">${fmt(item.price)}</td>
+        <td class="item-sub">${fmt(item.subtotal)}</td>
       </tr>`,
     )
     .join('')
@@ -75,24 +75,31 @@ function buildPrintDocument(data: Omit<ReceiptProps, 'onClose'> & { logoUrl: str
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=80mm, initial-scale=1" />
   <title>Receipt — ${escHtml(data.transactionId)}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     @page {
       size: 80mm auto;
-      margin: 3mm 4mm;
+      margin: 2mm 3mm;
+    }
+
+    html {
+      width: 80mm;
     }
 
     body {
       font-family: 'Courier New', Courier, monospace;
       font-size: 11px;
-      line-height: 1.4;
+      line-height: 1.45;
       background: #fff;
       color: #000;
-      width: 72mm;
+      width: 74mm;
+      max-width: 74mm;
       margin: 0 auto;
-      padding: 4mm 0 2mm;
+      padding: 2mm 0;
+      word-break: break-word;
     }
 
     .wrap { width: 100%; }
@@ -103,47 +110,88 @@ function buildPrintDocument(data: Omit<ReceiptProps, 'onClose'> & { logoUrl: str
     .num    { font-variant-numeric: tabular-nums; }
 
     /* Header */
-    .header { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
-    .header-logo { width: 48px; height: 48px; object-fit: contain; flex-shrink: 0; }
-    .header-text { text-align: center; flex: 1; }
-    .store-name { font-size: 13px; font-weight: 700; letter-spacing: 2px; margin-bottom: 1px; }
-    .store-sub  { font-size: 9px; color: #555; }
+    .header { text-align: center; margin-bottom: 4px; }
+    .header-logo { width: 68px; height: 68px; object-fit: contain; display: block; margin: 0 auto 4px; filter: contrast(1.8); }
+    .store-name { font-size: 14px; font-weight: 900; letter-spacing: 2.5px; margin-bottom: 1px; }
+    .store-sub  { font-size: 11px; font-weight: 700; color: #000; letter-spacing: 0.5px; }
 
     /* Dividers */
-    .dash { border: none; border-top: 1px dashed #888; margin: 6px 0; }
+    .dash { border: none; border-top: 1px dashed #000; margin: 5px 0; }
+    .solid { border: none; border-top: 2px solid #000; margin: 4px 0; }
 
     /* Metadata rows */
-    .meta { display: flex; justify-content: space-between; font-size: 10px; color: #444; margin: 2px 0; }
-    .meta span:last-child { font-weight: 600; color: #000; text-align: right; max-width: 62%; word-break: break-word; }
+    .meta { display: flex; justify-content: space-between; font-size: 11px; color: #000; margin: 2px 0; }
+    .meta .meta-label { flex-shrink: 0; color: #000; font-weight: 700; }
+    .meta .meta-value { font-weight: 700; color: #000; text-align: right; max-width: 52mm; word-break: break-word; }
 
     /* Section label */
-    .label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #777; margin: 7px 0 3px; }
+    .label { font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; color: #000; margin: 6px 0 3px; }
 
-    /* Items table */
-    table { width: 100%; border-collapse: collapse; font-size: 10px; }
+    /* Items table — fixed layout so columns never overflow */
+    table { width: 74mm; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+    col.col-item  { width: 34mm; }
+    col.col-qty   { width: 8mm; }
+    col.col-price { width: 16mm; }
+    col.col-sub   { width: 16mm; }
     thead th {
-      font-size: 9px; text-transform: uppercase; letter-spacing: 0.4px;
-      color: #666; padding: 2px 0; border-bottom: 1px solid #ccc;
+      font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.4px;
+      color: #000; padding: 3px 1px; border-bottom: 2px solid #000;
     }
     thead th:nth-child(1) { text-align: left; }
-    thead th:nth-child(2), thead th:nth-child(3), thead th:nth-child(4) { text-align: right; }
-    td { padding: 3px 0; border-bottom: 1px dotted #ddd; vertical-align: top; font-variant-numeric: tabular-nums; }
-    td.item-name { text-align: left; padding-right: 4px; max-width: 28mm; white-space: normal; word-break: break-word; }
-    td.center { text-align: center; }
+    thead th:nth-child(2) { text-align: center; }
+    thead th:nth-child(3), thead th:nth-child(4) { text-align: right; }
+    td {
+      padding: 3px 1px;
+      border-bottom: 1px dotted #333;
+      vertical-align: top;
+      font-variant-numeric: tabular-nums;
+      overflow: hidden;
+    }
+    td.item-name { text-align: left; white-space: normal; word-break: break-word; font-weight: 700; }
+    td.item-qty  { text-align: center; font-weight: 800; }
+    td.item-price { text-align: right; font-weight: 800; }
+    td.item-sub  { text-align: right; font-weight: 900; }
 
     /* Totals */
+    .totals-block { margin-top: 4px; }
     .total-row  { display: flex; justify-content: space-between; font-size: 11px; margin: 3px 0; font-variant-numeric: tabular-nums; }
-    .grand      { display: flex; justify-content: space-between; font-size: 15px; font-weight: 700; margin: 6px 0 3px; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 3px 0; font-variant-numeric: tabular-nums; }
-    .change-row { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; margin: 3px 0; font-variant-numeric: tabular-nums; }
+    .total-row .t-label { color: #000; font-weight: 700; }
+    .total-row .t-value { font-weight: 900; }
+    .grand {
+      display: flex; justify-content: space-between;
+      font-size: 16px; font-weight: 900;
+      margin: 5px 0 3px;
+      border-top: 2px solid #000;
+      border-bottom: 2px solid #000;
+      padding: 4px 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .change-row {
+      display: flex; justify-content: space-between;
+      font-size: 14px; font-weight: 900;
+      margin: 3px 0;
+      font-variant-numeric: tabular-nums;
+    }
     .change-row.warn { color: #cc0000; }
 
     /* Footer */
-    .footer { text-align: center; font-size: 10px; color: #666; margin-top: 10px; line-height: 1.7; }
-    .footer .tagline { font-size: 9px; letter-spacing: 2px; margin-top: 5px; color: #999; }
-    .disclaimer { font-size: 9px; font-weight: 600; color: #555; border-top: 1px dashed #bbb; margin-top: 8px; padding-top: 6px; line-height: 1.6; }
+    .footer { text-align: center; font-size: 11px; color: #000; margin-top: 8px; line-height: 1.9; }
+    .footer-thanks { font-family: Georgia, 'Times New Roman', serif; font-size: 12px; font-style: italic; font-weight: 700; color: #000; }
+    .footer .tagline { font-size: 11px; font-weight: 900; letter-spacing: 2px; margin-top: 4px; color: #000; }
+    .disclaimer {
+      font-size: 11px; font-weight: 700; color: #000;
+      border-top: 1px dashed #000;
+      margin-top: 7px; padding-top: 5px;
+      line-height: 1.8;
+    }
 
     @media print {
-      body { padding: 0; }
+      html { width: 80mm; }
+      body {
+        width: 74mm;
+        margin: 0 auto;
+        padding: 0;
+      }
       * {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
@@ -155,36 +203,42 @@ function buildPrintDocument(data: Omit<ReceiptProps, 'onClose'> & { logoUrl: str
   <div class="wrap">
     <div class="header">
       <img src="${data.logoUrl}" alt="Kurtland logo" class="header-logo" onerror="this.style.display='none'" />
-      <div class="header-text">
-        <p class="store-name">KURTLAND</p>
-        <p class="store-sub">Canteen Management System</p>
-      </div>
+      <p class="store-name">KURTLAND</p>
+      <p class="store-sub">GRADESCHOOL INC. &mdash; CANTEEN</p>
     </div>
     <hr class="dash" />
-    <div class="meta"><span>Transaction</span><span>${escHtml(data.transactionId)}</span></div>
-    <div class="meta"><span>Date &amp; Time</span><span>${escHtml(data.timestamp)}</span></div>
-    <div class="meta"><span>Cashier</span><span>${escHtml(data.cashierName)}</span></div>
+    <div class="meta"><span class="meta-label">Transaction</span><span class="meta-value">${escHtml(data.transactionId)}</span></div>
+    <div class="meta"><span class="meta-label">Date &amp; Time</span><span class="meta-value">${escHtml(data.timestamp)}</span></div>
+    <div class="meta"><span class="meta-label">Cashier</span><span class="meta-value">${escHtml(data.cashierName)}</span></div>
     <hr class="dash" />
     <p class="label">Order Items</p>
     <table>
+      <colgroup>
+        <col class="col-item" />
+        <col class="col-qty" />
+        <col class="col-price" />
+        <col class="col-sub" />
+      </colgroup>
       <thead>
         <tr>
-          <th style="text-align:left">Item</th>
-          <th style="text-align:right">Qty</th>
+          <th>Item</th>
+          <th style="text-align:center">Qty</th>
           <th style="text-align:right">Price</th>
           <th style="text-align:right">Total</th>
         </tr>
       </thead>
       <tbody>${itemRows}</tbody>
     </table>
-    <hr class="dash" />
-    <div class="grand"><span>TOTAL</span><span>${fmt(data.total)}</span></div>
-    <div class="total-row"><span>Amount Paid</span><span>${fmt(data.amountPaid)}</span></div>
-    <div class="change-row${insufficientPayment ? ' warn' : ''}"><span>${insufficientPayment ? 'INSUFFICIENT PAYMENT' : 'Change'}</span><span>${fmt(data.change)}</span></div>
+    <div class="totals-block">
+      <hr class="solid" />
+      <div class="grand"><span>TOTAL</span><span>${fmt(data.total)}</span></div>
+      <div class="total-row"><span class="t-label">Amount Paid</span><span class="t-value">${fmt(data.amountPaid)}</span></div>
+      <div class="change-row${insufficientPayment ? ' warn' : ''}"><span>${insufficientPayment ? 'INSUFFICIENT PAYMENT' : 'Change'}</span><span>${fmt(data.change)}</span></div>
+    </div>
     <hr class="dash" />
     <div class="footer">
-      <p>Thank you for your purchase!</p>
-      <p>Please come again.</p>
+      <p class="footer-thanks">Thank you for your purchase!</p>
+      <p class="footer-thanks">Please come again.</p>
       <p class="tagline">✦ KEEP YOUR RECEIPT ✦</p>
       <p class="disclaimer">Customer Copy Only<br />Not valid for official tax purposes</p>
     </div>
@@ -209,7 +263,7 @@ export default function Receipt({
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   function handlePrint() {
-    const win = window.open('', '_blank', 'width=320,height=600')
+    const win = window.open('', '_blank', 'width=420,height=750,resizable=yes')
     if (!win) {
       toast.error('Pop-ups are blocked — please allow them to print')
       return
@@ -219,11 +273,11 @@ export default function Receipt({
       buildPrintDocument({ transactionId, items, subtotal, total, amountPaid, change, cashierName, timestamp, logoUrl }),
     )
     win.document.close()
-    // A short delay lets the browser finish rendering before triggering print
+    // Delay allows fonts and logo image to fully load before printing
     setTimeout(() => {
       win.focus()
       win.print()
-    }, 200)
+    }, 600)
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────

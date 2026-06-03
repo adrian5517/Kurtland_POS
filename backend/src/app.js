@@ -51,8 +51,8 @@ app.use(cors({
 }))
 
 // ─── Request Body Limits ────────────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }))
-app.use(express.urlencoded({ limit: '10mb', extended: true }))
+app.use(express.json({ limit: '1mb' }))
+app.use(express.urlencoded({ limit: '1mb', extended: true }))
 
 // ─── Cookie & CSRF Protection ───────────────────────────────────────────────
 app.use(cookieParser())
@@ -66,7 +66,7 @@ app.use((req, res, next) => {
 })
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
-app.use(morgan('dev'))
+app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'))
 
 // ─── Audit Logging (Security Audits) ──────────────────────────────────────────
 app.use(auditLog)
