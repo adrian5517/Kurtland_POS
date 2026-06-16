@@ -47,7 +47,7 @@ const budgetRequestRepository = {
       conditions.push(`br.status = $${params.length}`)
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
-    const result = await db.query(`${BASE_SELECT} ${where} ORDER BY br.created_at DESC`)
+    const result = await db.query(`${BASE_SELECT} ${where} ORDER BY br.created_at DESC`, params)
     return result.rows.map(toRow)
   },
 
