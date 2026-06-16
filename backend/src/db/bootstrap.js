@@ -231,7 +231,7 @@ async function bootstrapDatabase() {
   await createCoreTables()
   await ensureSchemaCompatibility()
   await createIndexes()
-  await seedStarterProducts()
+  // await seedStarterProducts() // disabled: no mock/starter products in production
   await seedDefaultAdminUser()
   await repairSkuCounters()
   await seedDemoUsers()
