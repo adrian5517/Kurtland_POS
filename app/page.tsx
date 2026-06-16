@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import Image from 'next/image'
@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { Eye, EyeOff, ArrowRight } from 'lucide-react'
 import { apiUrl } from '@/lib/api'
-import { saveAuthSession } from '@/lib/auth'
+import { saveAuthSession, validateAuthSession } from '@/lib/auth'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -18,6 +18,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [checkingSession, setCheckingSession] = useState(true)
+
+  // If already logged in (valid, non-expired token), skip the login form
+  // and go straight to the dashboard.
+  useEffect(() => {
+    if (validateAuthSession()?.token) {
+      router.replace('/dashboard')
+    } else {
+      setCheckingSession(false)
+    }
+  }, [router])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -48,6 +59,12 @@ export default function LoginPage() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // While checking for an existing session, render nothing to avoid flashing
+  // the login form before redirecting an already-authenticated user.
+  if (checkingSession) {
+    return null
   }
 
   return (
