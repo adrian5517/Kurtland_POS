@@ -82,7 +82,7 @@ function mapProduct(product: ApiProduct): InventoryItem {
     category: product.category || 'Products',
     minStock: product.min_stock || 5,
     minPrice: price,
-    maxPrice: price,
+    maxPrice: srpPrice,
     srpPrice: srpPrice,
     isActive: product.is_active ?? true,
     currentStock: product.quantity || 0,
