@@ -47,6 +47,18 @@ const orderRepository = {
     }
   },
 
+  // Reduce the selling cashier's allocated stock for a product as they sell it.
+  // Clamped at 0 and a no-op when the cashier has no assignment for the product
+  // (e.g. an admin selling directly), so it never blocks a valid sale.
+  async decrementCashierAllocation(client, productId, cashierId, quantity) {
+    await client.query(
+      `UPDATE product_cashier_assignments
+       SET distributed_quantity = GREATEST(0, distributed_quantity - $3)
+       WHERE product_id = $1 AND cashier_id = $2`,
+      [productId, cashierId, quantity],
+    )
+  },
+
   async createLog(client, orderId, action, note) {
     await client.query(
       `INSERT INTO order_logs (order_id, action, note)

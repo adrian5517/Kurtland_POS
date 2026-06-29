@@ -127,7 +127,10 @@ const orderService = {
       // 4. Update core warehouse stock distributions and log individual updates
       for (const item of orderItems) {
         await orderRepository.decrementStock(client, item.productId, item.quantity)
-        
+
+        // Also shrink the selling cashier's allocated stock (no-op for admins).
+        await orderRepository.decrementCashierAllocation(client, item.productId, user.id, item.quantity)
+
         await orderRepository.createLog(
           client,
           order.id,
