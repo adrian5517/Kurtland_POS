@@ -19,6 +19,24 @@ class ReportService {
     const { intervalDays } = this._getRangeConfig(range)
     return await reportRepository.getCashierPerformance(intervalDays)
   }
+
+  async getDailySales({ cashierId = null, from = null, to = null } = {}) {
+    const rows = await reportRepository.getDailySales({ cashierId, from, to })
+    return rows.map((r) => {
+      const revenue = Number(r.revenue) || 0
+      const profit = Number(r.profit) || 0
+      const transactions = Number(r.transactions) || 0
+      return {
+        date: r.day,
+        transactions,
+        itemsSold: Number(r.items_sold) || 0,
+        revenue,
+        avgOrderValue: transactions > 0 ? revenue / transactions : 0,
+        profit,
+        margin: revenue > 0 ? Number(((profit / revenue) * 100).toFixed(1)) : 0,
+      }
+    })
+  }
 }
 
 module.exports = { reportService: new ReportService() }

@@ -27,6 +27,20 @@ class ReportController {
       next(error)
     }
   }
+
+  async getDailySales(req, res, next) {
+    try {
+      const { cashier_id, from, to } = req.query
+      const cashierId = cashier_id && /^\d+$/.test(cashier_id) ? parseInt(cashier_id, 10) : null
+      const dateRe = /^\d{4}-\d{2}-\d{2}$/
+      const fromDate = from && dateRe.test(from) ? from : null
+      const toDate = to && dateRe.test(to) ? to : null
+      const data = await reportService.getDailySales({ cashierId, from: fromDate, to: toDate })
+      return res.status(200).json({ success: true, data })
+    } catch (error) {
+      next(error)
+    }
+  }
 }
 
 module.exports = { reportController: new ReportController() }

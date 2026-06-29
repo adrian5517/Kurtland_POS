@@ -109,6 +109,47 @@ class ReportRepository {
     }
   }
 
+  // Per-day sales breakdown (grouped by local PH date) with optional date
+  // range and cashier filter. Defaults to the last 90 days when no range given.
+  async getDailySales({ cashierId = null, from = null, to = null } = {}) {
+    const params = []
+    const conditions = []
+
+    if (from) {
+      params.push(from)
+      conditions.push(`(o.created_at AT TIME ZONE 'Asia/Manila') >= $${params.length}::date`)
+    } else {
+      conditions.push(`o.created_at >= NOW() - INTERVAL '90 days'`)
+    }
+    if (to) {
+      params.push(to)
+      conditions.push(`(o.created_at AT TIME ZONE 'Asia/Manila') < ($${params.length}::date + INTERVAL '1 day')`)
+    }
+    if (cashierId) {
+      params.push(cashierId)
+      conditions.push(`o.cashier_id = $${params.length}`)
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+
+    const result = await db.query(
+      `SELECT
+         TO_CHAR(DATE(o.created_at AT TIME ZONE 'Asia/Manila'), 'YYYY-MM-DD') AS day,
+         COUNT(DISTINCT o.id)::int                                   AS transactions,
+         COALESCE(SUM(oi.quantity), 0)::int                          AS items_sold,
+         COALESCE(SUM(oi.subtotal), 0)::float                        AS revenue,
+         COALESCE(SUM(oi.subtotal) - SUM(p.price * oi.quantity), 0)::float AS profit
+       FROM orders o
+       LEFT JOIN order_items oi ON oi.order_id = o.id
+       LEFT JOIN products p ON p.id = oi.product_id
+       ${where}
+       GROUP BY DATE(o.created_at AT TIME ZONE 'Asia/Manila')
+       ORDER BY day DESC`,
+      params,
+    )
+    return result.rows
+  }
+
   async getCashierPerformance(intervalDays) {
     // profit = revenue − cost of goods sold. Cost uses the product's current
     // cost (products.price), since order_items doesn't snapshot cost at sale.

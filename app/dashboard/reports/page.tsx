@@ -22,6 +22,7 @@ import { Badge } from '@/components/ui/badge'
 import { apiFetch, apiHeaders } from '@/lib/api'
 import { getAuthSession } from '@/lib/auth'
 import { toast } from 'sonner'
+import DailySalesTable from '@/components/reports/daily-sales-table'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1489,6 +1490,11 @@ export default function ReportsPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* ── Daily Sales table (search / sort / date filter) ──────────── */}
+          <div className="mt-6">
+            <DailySalesTable cashierId={selectedCashierId} />
+          </div>
 
         </TabsContent>
 
