@@ -110,15 +110,25 @@ class ReportRepository {
   }
 
   async getCashierPerformance(intervalDays) {
+    // profit = revenue − cost of goods sold. Cost uses the product's current
+    // cost (products.price), since order_items doesn't snapshot cost at sale.
+    // sales_margin = profit / revenue × 100 (true margin on actual sales).
     const result = await db.query(
       `SELECT
          o.cashier_id,
          o.cashier_email,
-         COALESCE(SUM(oi.subtotal), 0)::float            AS revenue,
-         COUNT(DISTINCT o.id)::int                       AS transactions,
-         COALESCE(AVG(NULLIF(oi.subtotal, 0)), 0)::float AS avg_order_value
+         COALESCE(SUM(oi.subtotal), 0)::float                        AS revenue,
+         COUNT(DISTINCT o.id)::int                                   AS transactions,
+         COALESCE(AVG(NULLIF(oi.subtotal, 0)), 0)::float             AS avg_order_value,
+         COALESCE(SUM(oi.subtotal) - SUM(p.price * oi.quantity), 0)::float AS profit,
+         CASE
+           WHEN COALESCE(SUM(oi.subtotal), 0) > 0
+           THEN ((SUM(oi.subtotal) - SUM(p.price * oi.quantity)) / SUM(oi.subtotal) * 100)
+           ELSE 0
+         END::float                                                  AS sales_margin
        FROM orders o
        LEFT JOIN order_items oi ON oi.order_id = o.id
+       LEFT JOIN products p ON p.id = oi.product_id
        WHERE o.created_at >= NOW() - ($1 || ' days')::interval
        GROUP BY o.cashier_id, o.cashier_email
        ORDER BY revenue DESC`,

@@ -74,6 +74,8 @@ interface CashierPerformanceRow {
   revenue: number
   transactions: number
   avg_order_value: number
+  profit: number
+  sales_margin: number
 }
 
 interface ReportPayloadData {
@@ -1517,18 +1519,19 @@ export default function ReportsPage() {
                   </div>
                 ) : (
                   <div className="divide-y divide-border">
-                    <div className="grid grid-cols-[auto_1fr_auto_auto_auto] gap-3 px-6 py-2.5 bg-muted/40 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                    <div className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-3 px-6 py-2.5 bg-muted/40 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
                       <span className="w-6" />
                       <span>Cashier</span>
                       <span className="text-right w-28">Revenue</span>
                       <span className="text-right w-24">Transactions</span>
                       <span className="text-right w-24">Avg / Order</span>
+                      <span className="text-right w-24">Sales Margin</span>
                     </div>
                     {cashierPerformance.map((row, idx) => {
                       const totalRevenue = cashierPerformance.reduce((s, r) => s + r.revenue, 0)
                       const share = totalRevenue > 0 ? ((row.revenue / totalRevenue) * 100).toFixed(1) : '0.0'
                       return (
-                        <div key={row.cashier_id} className="grid grid-cols-[auto_1fr_auto_auto_auto] gap-3 items-center px-6 py-4 hover:bg-muted/20 transition-colors group">
+                        <div key={row.cashier_id} className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-3 items-center px-6 py-4 hover:bg-muted/20 transition-colors group">
                           <span className={`inline-flex h-7 w-7 items-center justify-center text-xs font-black rounded-xl border ${
                             idx === 0 ? 'bg-amber-500/20 text-amber-700 border-amber-500/30' :
                             idx === 1 ? 'bg-slate-500/10 text-slate-600 border-slate-500/20' :
@@ -1569,6 +1572,14 @@ export default function ReportsPage() {
                           </span>
                           <span className="text-right font-semibold text-sm text-muted-foreground w-24">
                             ₱{row.avg_order_value.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </span>
+                          <span className="text-right w-24">
+                            <span className={`font-bold text-sm ${row.sales_margin >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              {row.sales_margin.toFixed(1)}%
+                            </span>
+                            <span className="block text-[10px] text-muted-foreground">
+                              ₱{row.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </span>
                           </span>
                         </div>
                       )
