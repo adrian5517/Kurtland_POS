@@ -13,6 +13,13 @@ const { env } = require('./config/env')
 
 const app = express()
 
+// ─── Proxy Trust ──────────────────────────────────────────────────────────────
+// The app runs behind Nginx (one reverse proxy). Trust the first hop so that
+// req.ip, express-rate-limit, and the X-Forwarded-Proto HTTPS check use the
+// real client IP/scheme. Without this, rate-limiting errors
+// (ERR_ERL_UNEXPECTED_X_FORWARDED_FOR) and keys every client as the proxy IP.
+app.set('trust proxy', 1)
+
 // ─── Security Headers ────────────────────────────────────────────────────────
 app.use(helmet({
   contentSecurityPolicy: {
