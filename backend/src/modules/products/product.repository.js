@@ -1,4 +1,5 @@
 const { db } = require('../../db/pool')
+const { HttpError } = require('../../utils/http-error')
 
 function deriveSkuPrefix(category, fallbackSku = '') {
   const base = String(category || fallbackSku || 'PRD').toUpperCase()
@@ -196,6 +197,23 @@ const productRepository = {
     const client = await db.connect()
     try {
       await client.query('BEGIN')
+
+      // Cap total distribution at the product's available stock so cashiers
+      // can't collectively be allocated more units than exist. Lock the row
+      // to keep the check atomic against concurrent distributions.
+      const prod = await client.query(
+        'SELECT quantity FROM products WHERE id = $1 AND is_deleted = false FOR UPDATE',
+        [productId],
+      )
+      if (prod.rows.length === 0) {
+        throw new HttpError(404, 'Product not found')
+      }
+      const available = Number(prod.rows[0].quantity) || 0
+      const totalToDistribute = distributions.reduce((sum, d) => sum + (Number(d.quantity) || 0), 0)
+      if (totalToDistribute > available) {
+        throw new HttpError(400, `Cannot distribute ${totalToDistribute} units — only ${available} in stock`)
+      }
+
       const results = []
       for (const { cashierId, quantity } of distributions) {
         const row = await client.query(
