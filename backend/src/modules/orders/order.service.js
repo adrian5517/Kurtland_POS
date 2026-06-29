@@ -58,15 +58,24 @@ const orderService = {
 
       const productMap = new Map(products.map((product) => [product.id, product]))
 
-      const orderItems = parsed.data.items.map((item) => {
+      // Merge duplicate line items by product id, so the stock check and
+      // decrement account for the TOTAL requested quantity of each product
+      // (otherwise two lines of the same product could each pass the check
+      // against full stock and oversell).
+      const quantityByProduct = new Map()
+      for (const item of parsed.data.items) {
         const productId = Number(item.id)
+        quantityByProduct.set(productId, (quantityByProduct.get(productId) || 0) + Number(item.quantity))
+      }
+
+      const orderItems = [...quantityByProduct.entries()].map(([productId, quantity]) => {
         const product = productMap.get(productId)
 
         if (!product) {
-          throw new HttpError(404, `Product ${item.name} could not be found`)
+          throw new HttpError(404, `Product ${productId} could not be found`)
         }
 
-        if (product.quantity < item.quantity) {
+        if (product.quantity < quantity) {
           throw new HttpError(409, `${product.name} has insufficient stock`)
         }
 
@@ -76,8 +85,8 @@ const orderService = {
           sku: product.sku,
           productName: product.name,
           unitPrice,
-          quantity: item.quantity,
-          subtotal: unitPrice * item.quantity,
+          quantity,
+          subtotal: unitPrice * quantity,
         }
       })
 

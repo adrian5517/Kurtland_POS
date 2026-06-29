@@ -133,21 +133,35 @@ const budgetRequestRepository = {
   },
 
   async getAllCashierBudgetStats() {
+    // Pre-aggregate each table to ONE row per cashier before joining.
+    // Joining orders + budget_requests + budget_returns directly to users
+    // produced a cartesian fan-out (N×M×K rows), which inflated the FILTER'd
+    // SUMs and forced an incorrect SUM(DISTINCT) workaround on revenue.
     const result = await db.query(`
       SELECT
         u.id,
         u.email,
         u.name,
-        COALESCE(SUM(DISTINCT o.total_amount), 0)::float                                AS total_revenue,
-        COALESCE(SUM(br.amount) FILTER (WHERE br.status = 'approved'), 0)::float        AS total_approved,
-        COALESCE(SUM(br.amount) FILTER (WHERE br.status = 'pending'),  0)::float        AS total_pending,
-        COALESCE(SUM(ret.amount) FILTER (WHERE ret.status = 'approved'), 0)::float      AS approved_returns
+        COALESCE(o.total_revenue, 0)::float    AS total_revenue,
+        COALESCE(br.total_approved, 0)::float  AS total_approved,
+        COALESCE(br.total_pending, 0)::float   AS total_pending,
+        COALESCE(ret.approved_returns, 0)::float AS approved_returns
       FROM users u
-      LEFT JOIN orders o ON o.cashier_id = u.id
-      LEFT JOIN budget_requests br ON br.cashier_id = u.id
-      LEFT JOIN budget_returns ret ON ret.cashier_id = u.id
+      LEFT JOIN (
+        SELECT cashier_id, SUM(total_amount) AS total_revenue
+        FROM orders GROUP BY cashier_id
+      ) o ON o.cashier_id = u.id
+      LEFT JOIN (
+        SELECT cashier_id,
+               SUM(amount) FILTER (WHERE status = 'approved') AS total_approved,
+               SUM(amount) FILTER (WHERE status = 'pending')  AS total_pending
+        FROM budget_requests GROUP BY cashier_id
+      ) br ON br.cashier_id = u.id
+      LEFT JOIN (
+        SELECT cashier_id, SUM(amount) FILTER (WHERE status = 'approved') AS approved_returns
+        FROM budget_returns GROUP BY cashier_id
+      ) ret ON ret.cashier_id = u.id
       WHERE u.role = 'cashier' AND u.is_active = true
-      GROUP BY u.id, u.email, u.name
       ORDER BY total_revenue DESC
     `)
     return result.rows.map((r) => {

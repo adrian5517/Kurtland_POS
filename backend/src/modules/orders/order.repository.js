@@ -1,4 +1,5 @@
 const { db } = require('../../db/pool')
+const { HttpError } = require('../../utils/http-error')
 
 const orderRepository = {
   async createOrder(client, input) {
@@ -35,10 +36,15 @@ const orderRepository = {
   },
 
   async decrementStock(client, productId, quantity) {
-    await client.query(
-      'UPDATE products SET quantity = quantity - $2 WHERE id = $1',
+    // Guard with `quantity >= $2` so concurrent/edge cases can never drive
+    // stock negative. If no row matched, stock was insufficient.
+    const result = await client.query(
+      'UPDATE products SET quantity = quantity - $2 WHERE id = $1 AND quantity >= $2',
       [productId, quantity],
     )
+    if (result.rowCount === 0) {
+      throw new HttpError(409, 'Insufficient stock for one or more items')
+    }
   },
 
   async createLog(client, orderId, action, note) {
