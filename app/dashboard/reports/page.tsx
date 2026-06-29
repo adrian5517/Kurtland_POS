@@ -1493,7 +1493,7 @@ export default function ReportsPage() {
 
           {/* ── Daily Sales table (search / sort / date filter) ──────────── */}
           <div className="mt-6">
-            <DailySalesTable cashierId={selectedCashierId} />
+            <DailySalesTable cashierId={selectedCashierId} cashiers={cashiers} />
           </div>
 
         </TabsContent>

@@ -5,8 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import {
   CalendarDays, Search, X, ArrowUpDown, ArrowUp, ArrowDown,
-  Loader2, ChevronLeft, ChevronRight, Download, AlertCircle,
+  Loader2, ChevronLeft, ChevronRight, Download, AlertCircle, Users,
 } from 'lucide-react'
 import { apiFetch, apiHeaders } from '@/lib/api'
 import { getAuthSession } from '@/lib/auth'
@@ -36,7 +39,15 @@ function prettyDate(iso: string) {
   return dt.toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-export default function DailySalesTable({ cashierId }: { cashierId: number | null }) {
+interface CashierOption { id: number; email: string }
+
+export default function DailySalesTable({
+  cashierId,
+  cashiers = [],
+}: {
+  cashierId: number | null
+  cashiers?: CashierOption[]
+}) {
   const [rows, setRows] = useState<DailyRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -44,9 +55,13 @@ export default function DailySalesTable({ cashierId }: { cashierId: number | nul
   const [search, setSearch] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const [cashierFilter, setCashierFilter] = useState<number | null>(cashierId)
   const [sortField, setSortField] = useState<SortField>('date')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(1)
+
+  // Keep in sync if the page-level cashier filter changes.
+  useEffect(() => { setCashierFilter(cashierId) }, [cashierId])
 
   const load = useCallback(async () => {
     const s = getAuthSession()
@@ -55,7 +70,7 @@ export default function DailySalesTable({ cashierId }: { cashierId: number | nul
     setError(null)
     try {
       const params = new URLSearchParams()
-      if (cashierId) params.set('cashier_id', String(cashierId))
+      if (cashierFilter) params.set('cashier_id', String(cashierFilter))
       if (from) params.set('from', from)
       if (to) params.set('to', to)
       const qs = params.toString() ? `?${params.toString()}` : ''
@@ -69,10 +84,10 @@ export default function DailySalesTable({ cashierId }: { cashierId: number | nul
     } finally {
       setLoading(false)
     }
-  }, [cashierId, from, to])
+  }, [cashierFilter, from, to])
 
   useEffect(() => { void load() }, [load])
-  useEffect(() => { setPage(1) }, [search, from, to, sortField, sortDir])
+  useEffect(() => { setPage(1) }, [search, from, to, cashierFilter, sortField, sortDir])
 
   const filtered = useMemo(() => {
     let r = [...rows]
@@ -99,7 +114,7 @@ export default function DailySalesTable({ cashierId }: { cashierId: number | nul
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE))
   const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE)
 
-  const hasFilters = !!(search || from || to)
+  const hasFilters = !!(search || from || to || cashierFilter)
 
   function toggleSort(f: SortField) {
     if (sortField === f) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -107,7 +122,7 @@ export default function DailySalesTable({ cashierId }: { cashierId: number | nul
   }
 
   function clearFilters() {
-    setSearch(''); setFrom(''); setTo('')
+    setSearch(''); setFrom(''); setTo(''); setCashierFilter(null)
   }
 
   function exportCsv() {
@@ -177,7 +192,24 @@ export default function DailySalesTable({ cashierId }: { cashierId: number | nul
               </button>
             )}
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+            {cashiers.length > 0 && (
+              <Select
+                value={cashierFilter ? String(cashierFilter) : 'all'}
+                onValueChange={v => setCashierFilter(v === 'all' ? null : Number(v))}
+              >
+                <SelectTrigger className="h-9 w-44 rounded-xl text-xs">
+                  <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                  <SelectValue placeholder="All cashiers" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All cashiers</SelectItem>
+                  {cashiers.map(c => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.email.split('@')[0]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Input type="date" value={from} onChange={e => setFrom(e.target.value)} className="h-9 w-36 rounded-xl text-xs" title="From date" />
             <span className="text-xs text-muted-foreground">→</span>
             <Input type="date" value={to} onChange={e => setTo(e.target.value)} className="h-9 w-36 rounded-xl text-xs" title="To date" />
