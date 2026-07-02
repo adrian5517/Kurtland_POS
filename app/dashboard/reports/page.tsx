@@ -1002,7 +1002,8 @@ function OrderActivityLog({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ReportsPage() {
-  const [timeRange, setTimeRange] = useState<'day' | 'week' | 'month' | '3months'>('week')
+  const [timeRange, setTimeRange] = useState<'day' | 'week' | 'month' | '3months'>('day')
+  const [topProductsPage, setTopProductsPage] = useState(1)
   const [reportData, setReportData] = useState<ReportPayloadData | null>(null)
   const [logsData, setLogsData] = useState<OrderLog[]>([])
 
@@ -1115,6 +1116,9 @@ export default function ReportsPage() {
     void loadCashiers()
   }, [loadCashiers])
 
+  // Reset Top Products pagination whenever the underlying data changes.
+  useEffect(() => { setTopProductsPage(1) }, [reportData])
+
   useEffect(() => {
     if (isAdmin) void loadCashierPerformance()
   }, [loadCashierPerformance, isAdmin])
@@ -1135,6 +1139,22 @@ export default function ReportsPage() {
   const timeRangeLabel = useMemo(() => ({
     day: 'Today', week: 'This Week', month: 'This Month', '3months': 'Last 3 Months',
   } as const)[timeRange], [timeRange])
+
+  // Date window (YYYY-MM-DD, local) that mirrors the Period selector, so the
+  // Daily Sales table follows Today/Week/Month/3-months like the rest of the page.
+  const dailyRange = useMemo(() => {
+    const daysBack = { day: 0, week: 6, month: 29, '3months': 89 }[timeRange]
+    const toDate = new Date()
+    const fromDate = new Date()
+    fromDate.setDate(toDate.getDate() - daysBack)
+    const fmt = (d: Date) => {
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${y}-${m}-${day}`
+    }
+    return { from: fmt(fromDate), to: fmt(toDate) }
+  }, [timeRange])
 
   const refreshAll = useCallback(() => {
     void loadReportData()
@@ -1333,7 +1353,7 @@ export default function ReportsPage() {
           {/* KPI Cards */}
           <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
-              title={selectedCashier ? `${selectedCashier.email.split('@')[0]}'s Revenue` : 'Total Revenue'}
+              title={selectedCashier ? `${selectedCashier.email.split('@')[0]}'s Revenue · ${timeRangeLabel}` : `${timeRangeLabel} Revenue`}
               icon={DollarSign} loading={isLoading}
               value={`₱${computedMetrics.totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
               sub={<span className={`font-semibold ${growth >= 0 ? 'text-green-600' : 'text-rose-600'}`}>
@@ -1341,15 +1361,15 @@ export default function ReportsPage() {
               </span>}
             />
             <StatCard
-              title={selectedCashier ? `${selectedCashier.email.split('@')[0]}'s Transactions` : 'Total Transactions'}
+              title={selectedCashier ? `${selectedCashier.email.split('@')[0]}'s Transactions · ${timeRangeLabel}` : `${timeRangeLabel} Transactions`}
               icon={ShoppingCart} loading={isLoading}
               value={computedMetrics.totalTransactions.toLocaleString()}
               sub={<>Average order: <span className="font-bold text-foreground">₱{computedMetrics.avgTransaction.toLocaleString()}</span></>}
             />
             <StatCard
-              title="Best Sales Day" icon={TrendingUp} loading={isLoading}
+              title={timeRange === 'day' ? 'Peak Hour' : 'Best Sales Day'} icon={TrendingUp} loading={isLoading}
               value={`₱${computedMetrics.bestDay.sales.toLocaleString()}`}
-              sub={<>Date: <span className="font-bold text-primary">{computedMetrics.bestDay.date}</span></>}
+              sub={<>{timeRange === 'day' ? 'Time' : 'Date'}: <span className="font-bold text-primary">{computedMetrics.bestDay.date}</span></>}
             />
             <StatCard
               title="Overall Growth" icon={Percent} loading={isLoading}
@@ -1360,13 +1380,13 @@ export default function ReportsPage() {
             />
           </div>
 
-          {/* Charts */}
-          <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-2">
-            <Card className="border rounded-2xl col-span-1 lg:col-span-2 shadow-sm bg-card overflow-hidden">
+          {/* Revenue over time — full width */}
+          <Card className="border rounded-2xl shadow-sm bg-card overflow-hidden">
               <CardHeader className="border-b bg-muted/20">
                 <CardTitle className="text-base font-bold">Revenue Over Time</CardTitle>
                 <CardDescription>
-                  {selectedCashier ? `${selectedCashier.email}'s sales — ` : 'All cashiers · '}Daily totals for the selected period
+                  {selectedCashier ? `${selectedCashier.email}'s sales — ` : 'All cashiers · '}
+                  {timeRange === 'day' ? 'Hourly totals for today' : 'Daily totals for the selected period'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-6">
@@ -1388,8 +1408,18 @@ export default function ReportsPage() {
                   </ResponsiveContainer>
                 )}
               </CardContent>
-            </Card>
+          </Card>
 
+          {/* Daily Sales — directly under the revenue graph; follows the Period selector */}
+          <DailySalesTable
+            cashierId={selectedCashierId}
+            cashiers={cashiers}
+            initialFrom={dailyRange.from}
+            initialTo={dailyRange.to}
+          />
+
+          {/* Secondary charts */}
+          <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-2">
             <Card className="border rounded-2xl shadow-sm bg-card overflow-hidden">
               <CardHeader className="border-b bg-muted/20">
                 <CardTitle className="text-base font-bold">Sales by Category</CardTitle>
@@ -1448,7 +1478,7 @@ export default function ReportsPage() {
             <CardHeader className="border-b bg-muted/20">
               <CardTitle className="text-base font-bold">Top Selling Products</CardTitle>
               <CardDescription>
-                {selectedCashier ? `${selectedCashier.email.split('@')[0]}'s best products by revenue` : 'Best performers ranked by total revenue generated'}
+                {selectedCashier ? `${selectedCashier.email.split('@')[0]}'s products ranked by units sold` : 'All products ranked by units sold'}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
@@ -1456,45 +1486,68 @@ export default function ReportsPage() {
                 <div className="p-12 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></div>
               ) : (!reportData || reportData.topProducts.length === 0) ? (
                 <div className="p-12 text-center text-xs text-muted-foreground">No products sold in this period yet.</div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {reportData.topProducts.map((product, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-4 px-6 hover:bg-muted/20 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <span className={`inline-flex h-7 w-7 items-center justify-center text-xs font-black rounded-lg border ${
-                          idx === 0 ? 'bg-amber-500/20 text-amber-700 border-amber-500/30' :
-                          idx === 1 ? 'bg-slate-500/10 text-slate-600 border-slate-500/20' :
-                          idx === 2 ? 'bg-orange-500/10 text-orange-700 border-orange-500/20' :
-                          'bg-primary/10 text-primary border-primary/20'
-                        }`}>{idx + 1}</span>
-                        <div>
-                          <p className="font-bold text-sm text-foreground">{product.name}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {product.sales.toLocaleString()} {product.sales === 1 ? 'unit' : 'units'} sold
-                          </p>
+              ) : (() => {
+                const TP_PER_PAGE = 8
+                const totalTP = reportData.topProducts.length
+                const totalTPPages = Math.max(1, Math.ceil(totalTP / TP_PER_PAGE))
+                const pageStart = (topProductsPage - 1) * TP_PER_PAGE
+                const pageItems = reportData.topProducts.slice(pageStart, pageStart + TP_PER_PAGE)
+                return (
+                  <>
+                    <div className="divide-y divide-border">
+                      {pageItems.map((product, i) => {
+                        const rank = pageStart + i + 1
+                        return (
+                          <div key={rank} className="flex items-center justify-between p-4 px-6 hover:bg-muted/20 transition-colors">
+                            <div className="flex items-center gap-3">
+                              <span className={`inline-flex h-7 w-7 items-center justify-center text-xs font-black rounded-lg border ${
+                                rank === 1 ? 'bg-amber-500/20 text-amber-700 border-amber-500/30' :
+                                rank === 2 ? 'bg-slate-500/10 text-slate-600 border-slate-500/20' :
+                                rank === 3 ? 'bg-orange-500/10 text-orange-700 border-orange-500/20' :
+                                'bg-primary/10 text-primary border-primary/20'
+                              }`}>{rank}</span>
+                              <div>
+                                <p className="font-bold text-sm text-foreground">{product.name}</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  {product.sales.toLocaleString()} {product.sales === 1 ? 'unit' : 'units'} sold
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-extrabold text-sm text-primary">
+                                ₱{product.revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              </p>
+                              <p className="text-[10px] font-bold text-muted-foreground bg-muted border px-2 py-0.5 rounded-md mt-0.5">
+                                {computedMetrics.totalRevenue > 0
+                                  ? ((product.revenue / computedMetrics.totalRevenue) * 100).toFixed(1)
+                                  : 0}% of total revenue
+                              </p>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {totalTP > TP_PER_PAGE && (
+                      <div className="flex items-center justify-between gap-3 px-6 py-3 border-t bg-background">
+                        <p className="text-[11px] text-muted-foreground">
+                          <strong>{pageStart + 1}–{Math.min(pageStart + TP_PER_PAGE, totalTP)}</strong> of <strong>{totalTP}</strong> products
+                        </p>
+                        <div className="flex items-center gap-1">
+                          <Button variant="outline" size="icon" className="h-7 w-7 rounded-lg" onClick={() => setTopProductsPage(p => Math.max(1, p - 1))} disabled={topProductsPage === 1}>
+                            <ChevronLeft className="h-3.5 w-3.5" />
+                          </Button>
+                          <span className="text-[11px] font-semibold px-2">Page {topProductsPage} / {totalTPPages}</span>
+                          <Button variant="outline" size="icon" className="h-7 w-7 rounded-lg" onClick={() => setTopProductsPage(p => Math.min(totalTPPages, p + 1))} disabled={topProductsPage === totalTPPages}>
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          </Button>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-extrabold text-sm text-primary">
-                          ₱{product.revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                        </p>
-                        <p className="text-[10px] font-bold text-muted-foreground bg-muted border px-2 py-0.5 rounded-md mt-0.5">
-                          {computedMetrics.totalRevenue > 0
-                            ? ((product.revenue / computedMetrics.totalRevenue) * 100).toFixed(1)
-                            : 0}% of total revenue
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    )}
+                  </>
+                )
+              })()}
             </CardContent>
           </Card>
-
-          {/* ── Daily Sales table (search / sort / date filter) ──────────── */}
-          <div className="mt-6">
-            <DailySalesTable cashierId={selectedCashierId} cashiers={cashiers} />
-          </div>
 
         </TabsContent>
 

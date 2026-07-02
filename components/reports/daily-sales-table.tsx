@@ -44,17 +44,21 @@ interface CashierOption { id: number; email: string }
 export default function DailySalesTable({
   cashierId,
   cashiers = [],
+  initialFrom = '',
+  initialTo = '',
 }: {
   cashierId: number | null
   cashiers?: CashierOption[]
+  initialFrom?: string
+  initialTo?: string
 }) {
   const [rows, setRows] = useState<DailyRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const [search, setSearch] = useState('')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  const [from, setFrom] = useState(initialFrom)
+  const [to, setTo] = useState(initialTo)
   const [cashierFilter, setCashierFilter] = useState<number | null>(cashierId)
   const [sortField, setSortField] = useState<SortField>('date')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
@@ -62,6 +66,10 @@ export default function DailySalesTable({
 
   // Keep in sync if the page-level cashier filter changes.
   useEffect(() => { setCashierFilter(cashierId) }, [cashierId])
+
+  // Follow the page-level Period selector (Today/Week/Month/3 months). The
+  // user can still override with the date pickers below.
+  useEffect(() => { setFrom(initialFrom); setTo(initialTo) }, [initialFrom, initialTo])
 
   const load = useCallback(async () => {
     const s = getAuthSession()

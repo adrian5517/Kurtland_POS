@@ -51,8 +51,8 @@ class ReportRepository {
       JOIN orders o ON oi.order_id = o.id
       WHERE o.created_at >= NOW() - ($1 || ' days')::interval${filterCashierClause}
       GROUP BY p.id, p.name
-      ORDER BY revenue DESC
-      LIMIT 5;
+      ORDER BY sales DESC, revenue DESC
+      LIMIT 500;
     `
 
     // Growth: compare the current period against the previous equal-length
