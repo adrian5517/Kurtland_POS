@@ -10,7 +10,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts'
 import {
-  Download, TrendingUp, DollarSign, ShoppingCart, Percent, Loader2,
+  Download, TrendingUp, PhilippinePeso, ShoppingCart, Percent, Loader2,
   Calendar, AlertCircle, FileText, Search, ArrowUpDown, SlidersHorizontal,
   RefreshCw, CheckCircle2, History, ChevronDown, ChevronUp, Package, Receipt,
   ChevronLeft, ChevronRight, Filter, X, Clock, CheckCircle, PlusCircle,
@@ -96,20 +96,22 @@ const ORDERS_PER_PAGE = 8
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// All timestamps render in Philippine time regardless of the viewer's device.
+const PH_TZ = 'Asia/Manila'
 function formatFull(dateStr: string) {
   if (!dateStr) return '—'
   return new Date(dateStr).toLocaleString('en-PH', {
     weekday: 'short', year: 'numeric', month: 'short',
-    day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
+    day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: PH_TZ,
   })
 }
 function formatDate(dateStr: string) {
   if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })
+  return new Date(dateStr).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric', timeZone: PH_TZ })
 }
 function formatTime(dateStr: string) {
   if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true })
+  return new Date(dateStr).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: PH_TZ })
 }
 
 function parsePayment(note: string) {
@@ -1354,7 +1356,7 @@ export default function ReportsPage() {
           <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
               title={selectedCashier ? `${selectedCashier.email.split('@')[0]}'s Revenue · ${timeRangeLabel}` : `${timeRangeLabel} Revenue`}
-              icon={DollarSign} loading={isLoading}
+              icon={PhilippinePeso} loading={isLoading}
               value={`₱${computedMetrics.totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
               sub={<span className={`font-semibold ${growth >= 0 ? 'text-green-600' : 'text-rose-600'}`}>
                 {growth >= 0 ? '+' : ''}{growth}% vs previous period

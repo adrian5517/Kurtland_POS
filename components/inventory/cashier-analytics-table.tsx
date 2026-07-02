@@ -32,7 +32,7 @@ import {
   TrendingUp,
   Package,
   AlertCircle,
-  DollarSign,
+  PhilippinePeso,
   Users,
   RefreshCw,
   Search,
@@ -325,7 +325,7 @@ export function CashierAnalyticsTable({ budgetStats = {} }: { budgetStats?: Reco
             accent="blue"
           />
           <StatCard
-            icon={<DollarSign className="h-5 w-5" />}
+            icon={<PhilippinePeso className="h-5 w-5" />}
             label="Total Inventory Cost"
             value={formatCurrency(totals.inventoryCost)}
             sub="All products combined"
@@ -679,7 +679,7 @@ export function CashierAnalyticsTable({ budgetStats = {} }: { budgetStats?: Reco
                     <CardContent className="pt-5">
                       <div className="flex items-center gap-3">
                         <div className="rounded-lg bg-blue-100 p-2.5">
-                          <DollarSign className="h-5 w-5 text-blue-600" />
+                          <PhilippinePeso className="h-5 w-5 text-blue-600" />
                         </div>
                         <div>
                           <p className="text-xs font-medium text-muted-foreground">Total Inventory Cost</p>
