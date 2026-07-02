@@ -2,53 +2,45 @@ const { db } = require('../../db/pool')
 
 class ReportRepository {
   async getSalesData(intervalDays, bucketUnit, dateSymbols, cashierId = null) {
-    // Build parameterised cashier filter for the trend query (uses 4 params)
-    const trendParams = [intervalDays, bucketUnit, dateSymbols]
-    const trendCashierClause = cashierId ? ' AND o.cashier_id = $4' : ''
-    if (cashierId) trendParams.push(cashierId)
+    // intervalDays / bucketUnit / dateSymbols come from a fixed whitelist in the
+    // service (_getRangeConfig), NOT user input, so they are inlined safely. The
+    // ONLY bind parameter is the cashier id ($1); this avoids Postgres being
+    // unable to infer the type of an unreferenced parameter.
+    const params = cashierId ? [cashierId] : []
+    const cashierClause = cashierId ? ' AND o.cashier_id = $1' : ''
 
-    // Category / items / growth: intervalDays ($1) is only referenced for
-    // multi-day ranges (periodStart/periodLen). For "Today" those are constants,
-    // so build the param list + cashier position dynamically to always match.
-    const usesIntervalDays = bucketUnit !== 'hour'
-    const filterParams = usesIntervalDays ? [intervalDays] : []
-    const filterCashierClause = cashierId ? ` AND o.cashier_id = $${filterParams.length + 1}` : ''
-    if (cashierId) filterParams.push(cashierId)
-
-    // All time math is done in Philippine local time so "Today" means the
-    // calendar day from PH midnight (not a rolling 24h in UTC) and hour labels
-    // read in PH time. $2 = bucketUnit ('hour' | 'day' | 'week').
+    // All time math is in Philippine local time. "Today" (hour bucket) = the
+    // calendar day from PH midnight; other ranges = the last N days (PH).
     const nowLocal = `(NOW() AT TIME ZONE 'Asia/Manila')`
-    const lowerBound = bucketUnit === 'hour'
-      ? `DATE_TRUNC('day', ${nowLocal})`                              // today from PH midnight
-      : `DATE_TRUNC($2, ${nowLocal} - ($1 || ' days')::interval)`     // last N days (PH)
+    const createdAtLocal = `(o.created_at AT TIME ZONE 'Asia/Manila')`
+
+    // Trend series lower bound (bucket-aligned) and per-section window start.
+    const trendLower = bucketUnit === 'hour'
+      ? `DATE_TRUNC('day', ${nowLocal})`
+      : `DATE_TRUNC('${bucketUnit}', ${nowLocal} - INTERVAL '${intervalDays} days')`
+    const periodStart = bucketUnit === 'hour'
+      ? `DATE_TRUNC('day', ${nowLocal})`
+      : `(${nowLocal} - INTERVAL '${intervalDays} days')`
+    const periodLen = bucketUnit === 'hour' ? `INTERVAL '1 day'` : `INTERVAL '${intervalDays} days'`
 
     const trendQuery = `
       SELECT
-        TO_CHAR(series_dates.date_bucket, $3) as date,
+        TO_CHAR(series_dates.date_bucket, '${dateSymbols}') as date,
         COALESCE(SUM(oi.subtotal), 0)::float as sales,
         COUNT(DISTINCT o.id)::int as transactions
       FROM (
         SELECT generate_series(
-          ${lowerBound},
-          DATE_TRUNC($2, ${nowLocal}),
-          ('1 ' || $2)::interval
+          ${trendLower},
+          DATE_TRUNC('${bucketUnit}', ${nowLocal}),
+          INTERVAL '1 ${bucketUnit}'
         ) as date_bucket
       ) series_dates
       LEFT JOIN orders o
-        ON DATE_TRUNC($2, (o.created_at AT TIME ZONE 'Asia/Manila')) = series_dates.date_bucket${trendCashierClause}
+        ON DATE_TRUNC('${bucketUnit}', ${createdAtLocal}) = series_dates.date_bucket${cashierClause}
       LEFT JOIN order_items oi ON oi.order_id = o.id
       GROUP BY series_dates.date_bucket
       ORDER BY series_dates.date_bucket ASC;
     `
-
-    // Period window in PH time so every section matches the trend: "Today"
-    // (hour bucket) = calendar day from PH midnight; otherwise the last N days.
-    const createdAtLocal = `(o.created_at AT TIME ZONE 'Asia/Manila')`
-    const periodStart = bucketUnit === 'hour'
-      ? `DATE_TRUNC('day', ${nowLocal})`
-      : `(${nowLocal} - ($1 || ' days')::interval)`
-    const periodLen = bucketUnit === 'hour' ? `INTERVAL '1 day'` : `($1 || ' days')::interval`
 
     const categoryQuery = `
       SELECT
@@ -57,7 +49,7 @@ class ReportRepository {
       FROM order_items oi
       JOIN products p ON oi.product_id = p.id
       JOIN orders o ON oi.order_id = o.id
-      WHERE ${createdAtLocal} >= ${periodStart}${filterCashierClause}
+      WHERE ${createdAtLocal} >= ${periodStart}${cashierClause}
       GROUP BY p.category
       ORDER BY value DESC;
     `
@@ -70,7 +62,7 @@ class ReportRepository {
       FROM order_items oi
       JOIN products p ON oi.product_id = p.id
       JOIN orders o ON oi.order_id = o.id
-      WHERE ${createdAtLocal} >= ${periodStart}${filterCashierClause}
+      WHERE ${createdAtLocal} >= ${periodStart}${cashierClause}
       GROUP BY p.id, p.name
       ORDER BY sales DESC, revenue DESC
       LIMIT 500;
@@ -92,14 +84,14 @@ class ReportRepository {
             AND ${createdAtLocal} <  ${periodStart})::int AS previous_tx
       FROM orders o
       LEFT JOIN order_items oi ON oi.order_id = o.id
-      WHERE ${createdAtLocal} >= ${periodStart} - ${periodLen}${filterCashierClause};
+      WHERE ${createdAtLocal} >= ${periodStart} - ${periodLen}${cashierClause};
     `
 
     const [trendRes, categoryRes, itemsRes, growthRes] = await Promise.all([
-      db.query(trendQuery, trendParams),
-      db.query(categoryQuery, filterParams),
-      db.query(itemsQuery, filterParams),
-      db.query(growthQuery, filterParams),
+      db.query(trendQuery, params),
+      db.query(categoryQuery, params),
+      db.query(itemsQuery, params),
+      db.query(growthQuery, params),
     ])
 
     // Percentage change with safe handling of a zero baseline.
