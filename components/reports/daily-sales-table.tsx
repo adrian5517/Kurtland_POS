@@ -137,7 +137,9 @@ export default function DailySalesTable({
     if (filtered.length === 0) { toast.error('No rows to export.'); return }
     const header = 'Date,Transactions,Items Sold,Revenue,Avg Order,Profit,Margin %\n'
     const body = filtered
-      .map(r => `${r.date},${r.transactions},${r.itemsSold},${r.revenue.toFixed(2)},${r.avgOrderValue.toFixed(2)},${r.profit.toFixed(2)},${r.margin}`)
+      // Date is quoted readable text (e.g. "Jul 02, 2026") so Excel shows it in
+      // full instead of squeezing an ISO date into "#######".
+      .map(r => `"${prettyDate(r.date)}",${r.transactions},${r.itemsSold},${r.revenue.toFixed(2)},${r.avgOrderValue.toFixed(2)},${r.profit.toFixed(2)},${r.margin}`)
       .join('\n')
     const blob = new Blob([header + body], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
