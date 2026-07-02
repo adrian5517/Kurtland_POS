@@ -7,36 +7,57 @@ class ReportRepository {
     const trendCashierClause = cashierId ? ' AND o.cashier_id = $4' : ''
     if (cashierId) trendParams.push(cashierId)
 
-    // Category/items queries only use 1 base param + optional cashier
-    const filterParams = cashierId ? [intervalDays, cashierId] : [intervalDays]
-    const filterCashierClause = cashierId ? ' AND o.cashier_id = $2' : ''
+    // Category / items / growth: intervalDays ($1) is only referenced for
+    // multi-day ranges (periodStart/periodLen). For "Today" those are constants,
+    // so build the param list + cashier position dynamically to always match.
+    const usesIntervalDays = bucketUnit !== 'hour'
+    const filterParams = usesIntervalDays ? [intervalDays] : []
+    const filterCashierClause = cashierId ? ` AND o.cashier_id = $${filterParams.length + 1}` : ''
+    if (cashierId) filterParams.push(cashierId)
+
+    // All time math is done in Philippine local time so "Today" means the
+    // calendar day from PH midnight (not a rolling 24h in UTC) and hour labels
+    // read in PH time. $2 = bucketUnit ('hour' | 'day' | 'week').
+    const nowLocal = `(NOW() AT TIME ZONE 'Asia/Manila')`
+    const lowerBound = bucketUnit === 'hour'
+      ? `DATE_TRUNC('day', ${nowLocal})`                              // today from PH midnight
+      : `DATE_TRUNC($2, ${nowLocal} - ($1 || ' days')::interval)`     // last N days (PH)
 
     const trendQuery = `
-      SELECT 
+      SELECT
         TO_CHAR(series_dates.date_bucket, $3) as date,
         COALESCE(SUM(oi.subtotal), 0)::float as sales,
         COUNT(DISTINCT o.id)::int as transactions
       FROM (
         SELECT generate_series(
-          DATE_TRUNC($2, NOW() - ($1 || ' days')::interval), 
-          DATE_TRUNC($2, NOW()), 
+          ${lowerBound},
+          DATE_TRUNC($2, ${nowLocal}),
           ('1 ' || $2)::interval
         ) as date_bucket
       ) series_dates
-      LEFT JOIN orders o ON DATE_TRUNC($2, o.created_at) = series_dates.date_bucket${trendCashierClause}
+      LEFT JOIN orders o
+        ON DATE_TRUNC($2, (o.created_at AT TIME ZONE 'Asia/Manila')) = series_dates.date_bucket${trendCashierClause}
       LEFT JOIN order_items oi ON oi.order_id = o.id
       GROUP BY series_dates.date_bucket
       ORDER BY series_dates.date_bucket ASC;
     `
 
+    // Period window in PH time so every section matches the trend: "Today"
+    // (hour bucket) = calendar day from PH midnight; otherwise the last N days.
+    const createdAtLocal = `(o.created_at AT TIME ZONE 'Asia/Manila')`
+    const periodStart = bucketUnit === 'hour'
+      ? `DATE_TRUNC('day', ${nowLocal})`
+      : `(${nowLocal} - ($1 || ' days')::interval)`
+    const periodLen = bucketUnit === 'hour' ? `INTERVAL '1 day'` : `($1 || ' days')::interval`
+
     const categoryQuery = `
-      SELECT 
+      SELECT
         COALESCE(p.category, 'Uncategorized') as name,
         SUM(oi.subtotal)::float as value
       FROM order_items oi
       JOIN products p ON oi.product_id = p.id
       JOIN orders o ON oi.order_id = o.id
-      WHERE o.created_at >= NOW() - ($1 || ' days')::interval${filterCashierClause}
+      WHERE ${createdAtLocal} >= ${periodStart}${filterCashierClause}
       GROUP BY p.category
       ORDER BY value DESC;
     `
@@ -49,30 +70,29 @@ class ReportRepository {
       FROM order_items oi
       JOIN products p ON oi.product_id = p.id
       JOIN orders o ON oi.order_id = o.id
-      WHERE o.created_at >= NOW() - ($1 || ' days')::interval${filterCashierClause}
+      WHERE ${createdAtLocal} >= ${periodStart}${filterCashierClause}
       GROUP BY p.id, p.name
       ORDER BY sales DESC, revenue DESC
       LIMIT 500;
     `
 
-    // Growth: compare the current period against the previous equal-length
-    // period. e.g. range=week → last 7 days vs the 7 days before that.
-    // $1 = intervalDays (text). Reuses the same optional cashier filter.
+    // Growth: current period vs the previous equal-length period, in PH time.
+    // Today → today so far vs all of yesterday; week → last 7d vs prior 7d, etc.
     const growthQuery = `
       SELECT
         COALESCE(SUM(oi.subtotal) FILTER (
-          WHERE o.created_at >= NOW() - ($1 || ' days')::interval), 0)::float AS current_revenue,
+          WHERE ${createdAtLocal} >= ${periodStart}), 0)::float AS current_revenue,
         COALESCE(SUM(oi.subtotal) FILTER (
-          WHERE o.created_at >= NOW() - (($1::int * 2) || ' days')::interval
-            AND o.created_at <  NOW() - ($1 || ' days')::interval), 0)::float AS previous_revenue,
+          WHERE ${createdAtLocal} >= ${periodStart} - ${periodLen}
+            AND ${createdAtLocal} <  ${periodStart}), 0)::float AS previous_revenue,
         COUNT(DISTINCT o.id) FILTER (
-          WHERE o.created_at >= NOW() - ($1 || ' days')::interval)::int AS current_tx,
+          WHERE ${createdAtLocal} >= ${periodStart})::int AS current_tx,
         COUNT(DISTINCT o.id) FILTER (
-          WHERE o.created_at >= NOW() - (($1::int * 2) || ' days')::interval
-            AND o.created_at <  NOW() - ($1 || ' days')::interval)::int AS previous_tx
+          WHERE ${createdAtLocal} >= ${periodStart} - ${periodLen}
+            AND ${createdAtLocal} <  ${periodStart})::int AS previous_tx
       FROM orders o
       LEFT JOIN order_items oi ON oi.order_id = o.id
-      WHERE o.created_at >= NOW() - (($1::int * 2) || ' days')::interval${filterCashierClause};
+      WHERE ${createdAtLocal} >= ${periodStart} - ${periodLen}${filterCashierClause};
     `
 
     const [trendRes, categoryRes, itemsRes, growthRes] = await Promise.all([
