@@ -1376,9 +1376,15 @@ export default function ReportsPage() {
             <StatCard
               title="Overall Growth" icon={Percent} loading={isLoading}
               value={`${overall}%`}
-              sub={<span className="text-green-600 font-semibold flex items-center gap-1">
-                <CheckCircle2 className="h-3 w-3" /> Business performing well
-              </span>}
+              sub={overall >= 0 ? (
+                <span className="text-green-600 font-semibold flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" /> Up vs previous period
+                </span>
+              ) : (
+                <span className="text-rose-600 font-semibold flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" /> Down vs previous period
+                </span>
+              )}
             />
           </div>
 

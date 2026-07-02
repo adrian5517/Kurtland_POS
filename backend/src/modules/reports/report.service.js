@@ -16,8 +16,8 @@ class ReportService {
   }
 
   async getCashierPerformance(range) {
-    const { intervalDays } = this._getRangeConfig(range)
-    return await reportRepository.getCashierPerformance(intervalDays)
+    const { intervalDays, bucketUnit } = this._getRangeConfig(range)
+    return await reportRepository.getCashierPerformance(intervalDays, bucketUnit)
   }
 
   async getDailySales({ cashierId = null, from = null, to = null } = {}) {

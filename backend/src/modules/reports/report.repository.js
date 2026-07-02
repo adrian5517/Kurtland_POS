@@ -162,7 +162,16 @@ class ReportRepository {
     return result.rows
   }
 
-  async getCashierPerformance(intervalDays) {
+  async getCashierPerformance(intervalDays, bucketUnit) {
+    // Use the SAME PH-time window as the Overview so both tabs agree: "Today"
+    // = the PH calendar day from midnight; other ranges = the last N days (PH).
+    // intervalDays / bucketUnit are whitelisted config values, inlined safely.
+    const nowLocal = `(NOW() AT TIME ZONE 'Asia/Manila')`
+    const createdAtLocal = `(o.created_at AT TIME ZONE 'Asia/Manila')`
+    const periodStart = bucketUnit === 'hour'
+      ? `DATE_TRUNC('day', ${nowLocal})`
+      : `(${nowLocal} - INTERVAL '${intervalDays} days')`
+
     // profit = revenue − cost of goods sold. Cost uses the product's current
     // cost (products.price), since order_items doesn't snapshot cost at sale.
     // sales_margin = profit / revenue × 100 (true margin on actual sales).
@@ -182,10 +191,9 @@ class ReportRepository {
        FROM orders o
        LEFT JOIN order_items oi ON oi.order_id = o.id
        LEFT JOIN products p ON p.id = oi.product_id
-       WHERE o.created_at >= NOW() - ($1 || ' days')::interval
+       WHERE ${createdAtLocal} >= ${periodStart}
        GROUP BY o.cashier_id, o.cashier_email
-       ORDER BY revenue DESC`,
-      [intervalDays]
+       ORDER BY revenue DESC`
     )
     return result.rows
   }
