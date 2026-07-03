@@ -122,6 +122,16 @@ async function ensureSchemaCompatibility() {
   await db.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true')
   await db.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT false')
   await db.query('ALTER TABLE product_cashier_assignments ADD COLUMN IF NOT EXISTS distributed_quantity INTEGER NOT NULL DEFAULT 0')
+
+  // Snapshot of each item's cost at the moment of sale, so historical profit
+  // stays accurate even if a product's cost changes later. Nullable; existing
+  // rows are backfilled once from the product's current cost (best available).
+  await db.query('ALTER TABLE order_items ADD COLUMN IF NOT EXISTS unit_cost NUMERIC(10, 2)')
+  await db.query(
+    `UPDATE order_items oi SET unit_cost = p.price
+     FROM products p
+     WHERE oi.product_id = p.id AND oi.unit_cost IS NULL`,
+  )
 }
 
 async function createIndexes() {

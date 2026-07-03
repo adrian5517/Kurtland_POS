@@ -16,9 +16,9 @@ const orderRepository = {
   async createItems(client, orderId, items) {
     for (const item of items) {
       await client.query(
-        `INSERT INTO order_items (order_id, product_id, sku, product_name, unit_price, quantity, subtotal)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [orderId, item.productId, item.sku, item.productName, item.unitPrice, item.quantity, item.subtotal],
+        `INSERT INTO order_items (order_id, product_id, sku, product_name, unit_price, unit_cost, quantity, subtotal)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [orderId, item.productId, item.sku, item.productName, item.unitPrice, item.unitCost ?? 0, item.quantity, item.subtotal],
       )
     }
   },

@@ -85,6 +85,7 @@ const orderService = {
           sku: product.sku,
           productName: product.name,
           unitPrice,
+          unitCost: toNumber(product.price), // snapshot cost at sale time
           quantity,
           subtotal: unitPrice * quantity,
         }

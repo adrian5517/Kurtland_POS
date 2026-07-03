@@ -150,7 +150,7 @@ class ReportRepository {
          COUNT(DISTINCT o.id)::int                                   AS transactions,
          COALESCE(SUM(oi.quantity), 0)::int                          AS items_sold,
          COALESCE(SUM(oi.subtotal), 0)::float                        AS revenue,
-         COALESCE(SUM(oi.subtotal) - SUM(p.price * oi.quantity), 0)::float AS profit
+         COALESCE(SUM(oi.subtotal) - SUM(COALESCE(oi.unit_cost, p.price) * oi.quantity), 0)::float AS profit
        FROM orders o
        LEFT JOIN order_items oi ON oi.order_id = o.id
        LEFT JOIN products p ON p.id = oi.product_id
@@ -182,10 +182,10 @@ class ReportRepository {
          COALESCE(SUM(oi.subtotal), 0)::float                        AS revenue,
          COUNT(DISTINCT o.id)::int                                   AS transactions,
          COALESCE(AVG(NULLIF(oi.subtotal, 0)), 0)::float             AS avg_order_value,
-         COALESCE(SUM(oi.subtotal) - SUM(p.price * oi.quantity), 0)::float AS profit,
+         COALESCE(SUM(oi.subtotal) - SUM(COALESCE(oi.unit_cost, p.price) * oi.quantity), 0)::float AS profit,
          CASE
            WHEN COALESCE(SUM(oi.subtotal), 0) > 0
-           THEN ((SUM(oi.subtotal) - SUM(p.price * oi.quantity)) / SUM(oi.subtotal) * 100)
+           THEN ((SUM(oi.subtotal) - SUM(COALESCE(oi.unit_cost, p.price) * oi.quantity)) / SUM(oi.subtotal) * 100)
            ELSE 0
          END::float                                                  AS sales_margin
        FROM orders o
