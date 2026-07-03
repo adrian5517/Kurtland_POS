@@ -1666,32 +1666,32 @@ export default function InventoryPage() {
                       : <>Assign <span className="font-semibold text-foreground">{distributeDisplayName}</span> to cashiers</>
                     }
                   </p>
-                  {/* Available stock pill — single product only */}
-                  {(distributionProduct || distributionProducts.length === 1) && (() => {
-                    const prod = distributionProduct ?? distributionProducts[0]
-                    const totalStock = prod.currentStock ?? 0
-                    // Pending total: new inputs + unchanged existing allocations
-                    const pendingTotal = (() => {
-                      let sum = 0
-                      for (const cashier of cashiers) {
-                        const inputVal = distributionQuantities[cashier.id]
-                        if (inputVal !== undefined && inputVal !== '') {
-                          sum += parseInt(inputVal, 10) || 0
-                        } else if (currentAssignments.has(cashier.id) && selectedCashiers.has(cashier.id)) {
-                          sum += cashierAllocations[cashier.id] ?? 0
-                        }
-                      }
-                      return sum
-                    })()
-                    const available = totalStock - pendingTotal
+                  {/* Live allocation bar — single product only */}
+                  {isSingleDist && (() => {
+                    const totalStock = singleDistStock
+                    const allocated = allocatedTotal()
+                    const available = totalStock - allocated
+                    const pct = totalStock > 0 ? Math.min(100, Math.max(0, (allocated / totalStock) * 100)) : 0
+                    const state = available < 0 ? 'over' : available === 0 ? 'full' : 'ok'
+                    const fillCls = state === 'over' ? 'bg-red-500' : state === 'full' ? 'bg-amber-500' : 'bg-emerald-500'
+                    const pillCls = state === 'over'
+                      ? 'bg-red-100 text-red-600 dark:bg-red-950/30'
+                      : state === 'full'
+                      ? 'bg-amber-100 text-amber-600 dark:bg-amber-950/30'
+                      : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30'
                     return (
-                      <div className="flex items-center gap-3 mt-1.5">
-                        <span className="text-[11px] text-muted-foreground">
-                          Total stock: <span className="font-semibold text-foreground">{totalStock}</span>
-                        </span>
-                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${available < 0 ? 'bg-red-100 text-red-600 dark:bg-red-950/30' : available === 0 ? 'bg-amber-100 text-amber-600 dark:bg-amber-950/30' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30'}`}>
-                          {available >= 0 ? `${available} available` : `${Math.abs(available)} over-allocated`}
-                        </span>
+                      <div className="mt-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold text-foreground tabular-nums">
+                            Allocated {allocated} / {totalStock} units
+                          </span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full tabular-nums ${pillCls}`}>
+                            {available >= 0 ? `${available} left` : `${Math.abs(available)} over`}
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-muted overflow-hidden">
+                          <div className={`h-full rounded-full transition-all duration-300 ${fillCls}`} style={{ width: `${pct}%` }} />
+                        </div>
                       </div>
                     )
                   })()}
