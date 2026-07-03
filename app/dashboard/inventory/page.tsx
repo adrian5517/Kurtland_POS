@@ -270,6 +270,10 @@ export default function InventoryPage() {
   const [cashierSearch, setCashierSearch] = useState('')
   const managedProductIdRef = useRef<string | null>(null)
 
+  // Bulk distribution grid — quantities per product per cashier: { [productId]: { [cashierId]: qty } }
+  const [bulkQty, setBulkQty] = useState<Record<string, Record<number, number>>>({})
+  const [bulkGiveN, setBulkGiveN] = useState('')
+
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState<typeof PAGE_SIZE_OPTIONS[number]>(10)
@@ -616,6 +620,8 @@ export default function InventoryPage() {
     setCurrentAssignments(new Set())
     setCashierAllocations({})
     setCashierSearch('')
+    setBulkQty({})
+    setBulkGiveN('')
 
     const session = getAuthSession()
     if (!session?.token) {
@@ -749,6 +755,49 @@ export default function InventoryPage() {
   // Clear all entered quantities (keeps who's selected/assigned).
   const clearQuantities = () => setDistributionQuantities({})
 
+  // ── Bulk distribution grid helpers (many products × cashiers) ────────────────
+  const getBulkQty = (productId: string, cashierId: number) => bulkQty[productId]?.[cashierId] ?? 0
+  const setBulkQtyFor = (productId: string, cashierId: number, qty: number) => {
+    const q = Math.max(0, Math.floor(qty))
+    setBulkQty(prev => ({ ...prev, [productId]: { ...(prev[productId] || {}), [cashierId]: q } }))
+  }
+  const productAllocated = (product: InventoryItem) =>
+    Array.from(selectedCashiers).reduce((s, cid) => s + getBulkQty(product.id, cid), 0)
+  const productRemaining = (product: InventoryItem) =>
+    Math.max(0, (product.currentStock ?? 0) - productAllocated(product))
+
+  // Split every product's stock evenly across the selected cashiers.
+  const bulkSplitEvenly = () => {
+    const cids = Array.from(selectedCashiers)
+    if (cids.length === 0) return
+    const next: Record<string, Record<number, number>> = {}
+    for (const p of distributionProducts) {
+      const stock = p.currentStock ?? 0
+      const base = Math.floor(stock / cids.length)
+      const rem = stock % cids.length
+      next[p.id] = {}
+      cids.forEach((cid, i) => { next[p.id][cid] = base + (i < rem ? 1 : 0) })
+    }
+    setBulkQty(next)
+  }
+  // Give each selected cashier N of every product (capped at each product's stock).
+  const bulkGiveEach = (n: number) => {
+    const cids = Array.from(selectedCashiers)
+    if (cids.length === 0 || n <= 0) return
+    const next: Record<string, Record<number, number>> = {}
+    for (const p of distributionProducts) {
+      let remaining = p.currentStock ?? 0
+      next[p.id] = {}
+      for (const cid of cids) {
+        const give = Math.min(n, remaining)
+        next[p.id][cid] = give
+        remaining -= give
+      }
+    }
+    setBulkQty(next)
+  }
+  const bulkClearGrid = () => setBulkQty({})
+
   const handleDistributeProduct = async () => {
     const productsToDistribute = distributionProducts.length > 0 ? distributionProducts : (distributionProduct ? [distributionProduct] : [])
     
@@ -808,14 +857,16 @@ export default function InventoryPage() {
           if (!res.ok) throw new Error(data?.message || `Failed to update ${product.name}`)
         }
       } else {
-        // Bulk: grant access to multiple products at once (quantities aren't set
-        // here). The backend assign is delta-based, so existing allocations stay.
+        // Bulk: distribute per-cashier quantities for every selected product in
+        // one save (grants access + sets stock in a single pass per product).
         for (const product of productsToDistribute) {
-          const res = await apiFetch(`/api/products/${product.id}/assign-cashiers`, {
-            method: 'POST', headers: jsonHeaders, body: JSON.stringify({ cashierIds }),
+          const distributions = cashierIds.map(cid => ({ cashierId: cid, quantity: getBulkQty(product.id, cid) }))
+          if (distributions.length === 0) continue
+          const res = await apiFetch(`/api/products/${product.id}/distribute`, {
+            method: 'POST', headers: jsonHeaders, body: JSON.stringify({ distributions }),
           })
           const data = await res.json()
-          if (!res.ok) throw new Error(data?.message || `Failed to assign ${product.name}`)
+          if (!res.ok) throw new Error(data?.message || `Failed to distribute ${product.name}`)
         }
       }
 
@@ -826,12 +877,14 @@ export default function InventoryPage() {
       setDistributionQuantities({})
       setCashierAllocations({})
       setCurrentAssignments(new Set())
+      setBulkQty({})
+      setBulkGiveN('')
       managedProductIdRef.current = null
       const productsCount = productsToDistribute.length
       const productNames = productsCount === 1 ? productsToDistribute[0].name : `${productsCount} products`
       toast.success(isSingle
         ? `✓ ${productNames} — assignments saved`
-        : `✓ ${productNames} assigned to ${cashierIds.length} cashier(s)`
+        : `✓ ${productNames} distributed to ${cashierIds.length} cashier(s)`
       )
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to distribute product')
@@ -1966,8 +2019,84 @@ export default function InventoryPage() {
                 )}
               </div>
 
-              {/* Change / qty summary */}
-              {!isLoadingCashiers && selectedCashiers.size > 0 && (() => {
+              {/* ── Bulk distribution grid (many products × cashiers) ── */}
+              {!isSingleDist && !isLoadingCashiers && (
+                selectedCashiers.size === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-4 border rounded-xl border-dashed">
+                    Pick at least one cashier above, then set how much of each product they get.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Quick fills */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mr-0.5">Quick fill</span>
+                      <button type="button" onClick={bulkSplitEvenly}
+                        className="text-[11px] font-semibold px-2.5 py-1 rounded-lg border bg-background hover:border-primary hover:text-primary transition-colors">
+                        Split every product evenly
+                      </button>
+                      <div className="flex items-center border rounded-lg bg-background overflow-hidden">
+                        <span className="text-[11px] text-muted-foreground pl-2">Give each</span>
+                        <input type="number" min="0" value={bulkGiveN}
+                          onChange={e => setBulkGiveN(e.target.value)} placeholder="0"
+                          className="w-11 h-7 text-xs text-center bg-transparent focus:outline-none tabular-nums" />
+                        <button type="button" onClick={() => bulkGiveEach(parseInt(bulkGiveN || '0', 10))}
+                          className="text-[11px] font-semibold px-2 h-7 text-primary hover:bg-primary/10">Apply</button>
+                      </div>
+                      <button type="button" onClick={bulkClearGrid}
+                        className="text-[11px] font-semibold px-2.5 py-1 rounded-lg border bg-background text-muted-foreground hover:border-red-300 hover:text-red-600 transition-colors">
+                        Clear
+                      </button>
+                    </div>
+
+                    {/* Grid: rows = products, columns = selected cashiers */}
+                    <div className="border rounded-xl overflow-x-auto">
+                      <div style={{ minWidth: `${210 + selectedCashiers.size * 120}px` }}>
+                        <div className="flex items-center gap-2 px-3 py-2 bg-muted/40 border-b text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          <span className="flex-1 min-w-[130px]">Product</span>
+                          {Array.from(selectedCashiers).map(cid => {
+                            const c = cashiers.find(x => x.id === cid)
+                            return <span key={cid} className="w-[110px] text-center shrink-0 truncate">{c ? c.email.split('@')[0] : cid}</span>
+                          })}
+                          <span className="w-[48px] text-right shrink-0">Left</span>
+                        </div>
+                        {distributionProducts.map(product => {
+                          const left = productRemaining(product)
+                          const stock = product.currentStock ?? 0
+                          return (
+                            <div key={product.id} className="flex items-center gap-2 px-3 py-2.5 border-b last:border-b-0">
+                              <div className="flex-1 min-w-[130px]">
+                                <p className="text-xs font-semibold truncate">{product.name}</p>
+                                <p className="text-[10px] text-muted-foreground">{stock} in stock</p>
+                              </div>
+                              {Array.from(selectedCashiers).map(cid => {
+                                const val = getBulkQty(product.id, cid)
+                                const maxForCell = val + left
+                                return (
+                                  <div key={cid} className="w-[110px] shrink-0 flex items-center justify-center">
+                                    <div className="flex items-center border rounded-lg overflow-hidden bg-background">
+                                      <button type="button" disabled={val <= 0} onClick={() => setBulkQtyFor(product.id, cid, val - 1)}
+                                        className="w-6 h-7 grid place-items-center text-sm hover:bg-primary/10 hover:text-primary disabled:text-muted-foreground/40">−</button>
+                                      <input type="number" min="0" value={val === 0 ? '' : val} placeholder="0"
+                                        onChange={e => setBulkQtyFor(product.id, cid, Math.min(maxForCell, parseInt(e.target.value || '0', 10)))}
+                                        className="w-9 h-7 text-xs text-center font-bold bg-background border-x focus:outline-none tabular-nums" />
+                                      <button type="button" disabled={left <= 0} onClick={() => setBulkQtyFor(product.id, cid, val + 1)}
+                                        className="w-6 h-7 grid place-items-center text-sm hover:bg-primary/10 hover:text-primary disabled:text-muted-foreground/40">+</button>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                              <span className={`w-[48px] text-right shrink-0 text-xs font-bold tabular-nums ${left === 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{left}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )
+              )}
+
+              {/* Change / qty summary (single product) */}
+              {isSingleDist && !isLoadingCashiers && selectedCashiers.size > 0 && (() => {
                 const totalQty = Array.from(selectedCashiers).reduce((s, cid) => s + (parseInt(distributionQuantities[cid] || '0', 10)), 0)
                 return (
                   <div className="flex items-center flex-wrap gap-3 px-0.5">
@@ -2048,7 +2177,7 @@ export default function InventoryPage() {
                   </span>
                 ) : isManageMode
                   ? 'Save Changes'
-                  : `Distribute to ${selectedCashiers.size} Cashier${selectedCashiers.size !== 1 ? 's' : ''}`
+                  : `Distribute ${distributionProducts.length} product${distributionProducts.length !== 1 ? 's' : ''} to ${selectedCashiers.size} cashier${selectedCashiers.size !== 1 ? 's' : ''}`
                 }
               </Button>
               <Button
