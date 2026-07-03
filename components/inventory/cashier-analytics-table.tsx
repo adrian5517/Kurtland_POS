@@ -204,6 +204,10 @@ export function CashierAnalyticsTable({ budgetStats = {} }: { budgetStats?: Reco
         ...c,
         inventory_cost: Number(c.inventory_cost || 0),
         profit_potential: Number(c.profit_potential || 0),
+        // Postgres returns COUNT/SUM as strings; coerce so arithmetic doesn't
+        // string-concatenate (e.g. 0 + "2125" -> "02125").
+        stock_alerts_count: Number(c.stock_alerts_count || 0),
+        total_products: Number(c.total_products || 0),
         stock_alerts: c.stock_alerts || [],
         products: c.products || [],
       }))
@@ -243,11 +247,21 @@ export function CashierAnalyticsTable({ budgetStats = {} }: { budgetStats?: Reco
     )
   }, [selectedCashier, productSearch])
 
-  const totals = useMemo(() => ({
-    inventoryCost: analytics.reduce((s, c) => s + c.inventory_cost, 0),
-    profitPotential: analytics.reduce((s, c) => s + c.profit_potential, 0),
-    stockAlerts: analytics.reduce((s, c) => s + c.stock_alerts_count, 0),
-  }), [analytics])
+  const totals = useMemo(() => {
+    // Count DISTINCT products low on stock (a product assigned to several
+    // cashiers should count once), not the sum of per-cashier alert counts.
+    const lowStockIds = new Set<number>()
+    for (const c of analytics) {
+      for (const a of (c.stock_alerts || [])) {
+        if (a && typeof a.product_id === 'number') lowStockIds.add(a.product_id)
+      }
+    }
+    return {
+      inventoryCost: analytics.reduce((s, c) => s + Number(c.inventory_cost || 0), 0),
+      profitPotential: analytics.reduce((s, c) => s + Number(c.profit_potential || 0), 0),
+      stockAlerts: lowStockIds.size,
+    }
+  }, [analytics])
 
   if (isLoading) {
     return (
@@ -326,23 +340,23 @@ export function CashierAnalyticsTable({ budgetStats = {} }: { budgetStats?: Reco
           />
           <StatCard
             icon={<PhilippinePeso className="h-5 w-5" />}
-            label="Total Inventory Cost"
+            label="Inventory Cost"
             value={formatCurrency(totals.inventoryCost)}
-            sub="All products combined"
+            sub="Puhunan sa lahat ng stock"
             accent="gray"
           />
           <StatCard
             icon={<TrendingUp className="h-5 w-5" />}
-            label="Total Profit Potential"
+            label="Potential Profit"
             value={formatCurrency(totals.profitPotential)}
-            sub="If all stock sells"
+            sub="Kita kung mabenta lahat ng stock"
             accent="green"
           />
           <StatCard
             icon={<AlertTriangle className="h-5 w-5" />}
-            label="Total Stock Alerts"
-            value={String(totals.stockAlerts)}
-            sub={totals.stockAlerts === 0 ? 'All levels healthy' : 'Items need restocking'}
+            label="Items to Restock"
+            value={totals.stockAlerts.toLocaleString()}
+            sub={totals.stockAlerts === 0 ? 'Maayos ang lahat ng stock' : 'Mababa na — kailangang mag-restock'}
             accent={totals.stockAlerts > 0 ? 'red' : 'green'}
           />
         </div>
