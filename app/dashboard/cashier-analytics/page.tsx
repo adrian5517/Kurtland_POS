@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { getAuthSession } from '@/lib/auth'
 import { apiFetch, apiHeaders } from '@/lib/api'
 import { CashierAnalyticsTable } from '@/components/inventory/cashier-analytics-table'
+import { CashierSalesPerformance } from '@/components/reports/cashier-sales-performance'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { RefreshCw, BarChart3, AlertCircle, Wallet, TrendingDown, Clock, ChevronRight } from 'lucide-react'
@@ -94,10 +95,13 @@ export default function CashierAnalyticsPage() {
             </div>
           </h1>
           <p className="text-sm text-muted-foreground">
-            Monitor cashier performance, inventory costs, profit potential, and stock levels across all cashiers.
+            Kita (revenue) at tubo (profit) kada cashier per araw/linggo/buwan, plus inventory costs, profit potential, and stock levels.
           </p>
         </div>
       </div>
+
+      {/* ── Sales performance (Kita &amp; Tubo) per period ── */}
+      <CashierSalesPerformance />
 
       {/* ── Budget Overview ── */}
       {budgetSummary && (
