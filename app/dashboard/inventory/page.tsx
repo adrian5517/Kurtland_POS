@@ -273,6 +273,9 @@ export default function InventoryPage() {
   // Bulk distribution grid — quantities per product per cashier: { [productId]: { [cashierId]: qty } }
   const [bulkQty, setBulkQty] = useState<Record<string, Record<number, number>>>({})
   const [bulkGiveN, setBulkGiveN] = useState('')
+  // True when the modal was opened via the toolbar product-picker (grid flow),
+  // false when opened from a single product's "Manage assignments" row action.
+  const [bulkMode, setBulkMode] = useState(false)
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
@@ -686,6 +689,7 @@ export default function InventoryPage() {
 
   const openDistributionModal = (product: InventoryItem) => {
     managedProductIdRef.current = product.id
+    setBulkMode(false)
     setDistributionProduct(product)
     setDistributionProducts([product])
     setDistributionQuantities({})
@@ -695,7 +699,7 @@ export default function InventoryPage() {
   }
 
   // ── Distribution modal derived state ──────────────────────────────────────
-  const isManageMode = distributionProducts.length === 1
+  const isManageMode = !bulkMode
   const distributeDisplayName = isManageMode
     ? (distributionProducts[0]?.name ?? distributionProduct?.name ?? 'Product')
     : `${distributionProducts.length} products`
@@ -707,9 +711,9 @@ export default function InventoryPage() {
     : 0
 
   // ── Distribution quantity helpers (single-product only) ──────────────────────
-  const singleDistProduct = distributionProduct ?? (distributionProducts.length === 1 ? distributionProducts[0] : null)
+  const singleDistProduct = distributionProduct ?? distributionProducts[0] ?? null
   const singleDistStock = singleDistProduct?.currentStock ?? 0
-  const isSingleDist = !!singleDistProduct
+  const isSingleDist = !bulkMode
 
   // Read a cashier's currently-entered quantity (0 if none).
   const qtyOf = (cid: number) => parseInt(distributionQuantities[cid] || '0', 10) || 0
@@ -811,7 +815,7 @@ export default function InventoryPage() {
     }
 
     const cashierIds = Array.from(selectedCashiers)
-    const isSingle = productsToDistribute.length === 1
+    const isSingle = !bulkMode
 
     // Over-allocation guard (single-product only)
     if (isSingle) {
@@ -2313,6 +2317,7 @@ export default function InventoryPage() {
                     setDistributionProducts(selectedProducts)
                     setDistributionProduct(null)
                     setDistributionQuantities({})
+                    setBulkMode(true)
                     setShowDistributionModal(true)
                     setShowProductSelector(false)
                     setDistributionSearch('')
