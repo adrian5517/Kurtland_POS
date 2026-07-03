@@ -184,17 +184,25 @@ const productService = {
   },
 
   async assignProductToCashiers(productId, cashierIds) {
-    // First, remove all existing assignments for this product
+    // Delta update so existing cashiers keep their distributed_quantity:
+    // remove ONLY those no longer selected, add ONLY the newly selected.
+    // (The old "remove all then re-add" wiped every cashier's allocation to 0.)
     const existingRows = await productRepository.getCashiersForProduct(productId)
+    const existingIds = new Set(existingRows.map((r) => r.cashier_id))
+    const targetIds = new Set(cashierIds)
+
     for (const row of existingRows) {
-      await productRepository.removeFromCashier(productId, row.cashier_id)
+      if (!targetIds.has(row.cashier_id)) {
+        await productRepository.removeFromCashier(productId, row.cashier_id)
+      }
     }
 
-    // Then, assign to the new set of cashiers
     const assignments = []
     for (const cashierId of cashierIds) {
-      const result = await productRepository.assignToCashier(productId, cashierId)
-      if (result) assignments.push(result)
+      if (!existingIds.has(cashierId)) {
+        const result = await productRepository.assignToCashier(productId, cashierId)
+        if (result) assignments.push(result)
+      }
     }
 
     return {
