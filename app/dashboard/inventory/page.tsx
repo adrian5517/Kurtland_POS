@@ -267,6 +267,7 @@ export default function InventoryPage() {
 
   // Manage assignments — tracks current cashier assignments for undistribute UX
   const [currentAssignments, setCurrentAssignments] = useState<Set<number>>(new Set())
+  const [cashierSearch, setCashierSearch] = useState('')
   const managedProductIdRef = useRef<string | null>(null)
 
   // Pagination states
@@ -614,6 +615,7 @@ export default function InventoryPage() {
     setSelectedCashiers(new Set())
     setCurrentAssignments(new Set())
     setCashierAllocations({})
+    setCashierSearch('')
 
     const session = getAuthSession()
     if (!session?.token) {
@@ -690,6 +692,55 @@ export default function InventoryPage() {
   const distributeRemoveCount = isManageMode
     ? Array.from(currentAssignments).filter(id => !selectedCashiers.has(id)).length
     : 0
+
+  // ── Distribution quantity helpers (single-product only) ──────────────────────
+  const singleDistProduct = distributionProduct ?? (distributionProducts.length === 1 ? distributionProducts[0] : null)
+  const singleDistStock = singleDistProduct?.currentStock ?? 0
+  const isSingleDist = !!singleDistProduct
+
+  // Read a cashier's currently-entered quantity (0 if none).
+  const qtyOf = (cid: number) => parseInt(distributionQuantities[cid] || '0', 10) || 0
+
+  // Total units allocated across everyone (falls back to existing allocation for
+  // kept cashiers with no new input), used to compute how much stock is left.
+  const allocatedTotal = () => {
+    let sum = 0
+    for (const c of cashiers) {
+      const v = distributionQuantities[c.id]
+      if (v !== undefined && v !== '') sum += parseInt(v, 10) || 0
+      else if (currentAssignments.has(c.id) && selectedCashiers.has(c.id)) sum += cashierAllocations[c.id] ?? 0
+    }
+    return sum
+  }
+  const remainingStock = () => Math.max(0, singleDistStock - allocatedTotal())
+
+  // Set one cashier's quantity; qty > 0 also selects them (assigned = has stock).
+  const setCashierQty = (cid: number, qty: number) => {
+    const q = Math.max(0, Math.floor(qty))
+    setDistributionQuantities(prev => ({ ...prev, [cid]: q === 0 ? '' : String(q) }))
+    if (q > 0) setSelectedCashiers(prev => new Set(prev).add(cid))
+  }
+  // Fill a cashier up to all remaining stock ("give the rest to this cashier").
+  const maxOutCashier = (cid: number) => setCashierQty(cid, qtyOf(cid) + remainingStock())
+
+  // Quick fill: split all stock evenly across every cashier.
+  const splitEvenly = () => {
+    const n = cashiers.length
+    if (!n || !isSingleDist) return
+    const base = Math.floor(singleDistStock / n)
+    const rem = singleDistStock % n
+    const q: Record<number, string> = {}
+    const sel = new Set<number>()
+    cashiers.forEach((c, i) => {
+      const val = base + (i < rem ? 1 : 0)
+      q[c.id] = val === 0 ? '' : String(val)
+      if (val > 0) sel.add(c.id)
+    })
+    setDistributionQuantities(q)
+    setSelectedCashiers(sel)
+  }
+  // Clear all entered quantities (keeps who's selected/assigned).
+  const clearQuantities = () => setDistributionQuantities({})
 
   const handleDistributeProduct = async () => {
     const productsToDistribute = distributionProducts.length > 0 ? distributionProducts : (distributionProduct ? [distributionProduct] : [])
@@ -1752,6 +1803,35 @@ export default function InventoryPage() {
                     </button>
                   )}
                 </div>
+
+                {/* Quick fill (single product) + search */}
+                {!isLoadingCashiers && cashiers.length > 0 && (
+                  <div className="space-y-2">
+                    {isSingleDist && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mr-0.5">Quick fill</span>
+                        <button type="button" onClick={splitEvenly}
+                          className="text-[11px] font-semibold px-2.5 py-1 rounded-lg border bg-background hover:border-primary hover:text-primary transition-colors">
+                          Split evenly
+                        </button>
+                        <button type="button" onClick={clearQuantities}
+                          className="text-[11px] font-semibold px-2.5 py-1 rounded-lg border bg-background text-muted-foreground hover:border-red-300 hover:text-red-600 transition-colors">
+                          Clear quantities
+                        </button>
+                      </div>
+                    )}
+                    {cashiers.length > 4 && (
+                      <input
+                        type="text"
+                        value={cashierSearch}
+                        onChange={e => setCashierSearch(e.target.value)}
+                        placeholder="Search cashiers…"
+                        className="w-full h-8 px-3 text-xs rounded-lg border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    )}
+                  </div>
+                )}
+
                 {isLoadingCashiers ? (
                   <div className="space-y-2">
                     {[1, 2, 3].map(i => (
@@ -1765,7 +1845,9 @@ export default function InventoryPage() {
                   </div>
                 ) : (
                   <div className="rounded-xl border overflow-hidden">
-                    {cashiers.map(cashier => {
+                    {cashiers
+                      .filter(c => !cashierSearch.trim() || c.email.toLowerCase().includes(cashierSearch.trim().toLowerCase()))
+                      .map(cashier => {
                       const isCurrentlyAssigned = currentAssignments.has(cashier.id)
                       const isSelected = selectedCashiers.has(cashier.id)
                       const willAdd = isManageMode && !isCurrentlyAssigned && isSelected
@@ -1796,11 +1878,8 @@ export default function InventoryPage() {
                             {isSelected && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
                           </div>
                           <span className="text-sm font-medium flex-1 min-w-0 truncate">{cashier.email}</span>
-                          {/* Quantity input — shown when cashier is selected */}
-                          {isSelected && (() => {
-                            const prod = distributionProduct ?? distributionProducts[0] ?? null
-                            const totalStock = prod?.currentStock ?? Infinity
-                            // Running total of all other cashiers' pending qtys
+                          {/* Quantity stepper — single-product distribution, selected cashier */}
+                          {isSelected && isSingleDist && (() => {
                             const otherTotal = Array.from(selectedCashiers)
                               .filter(cid => cid !== cashier.id)
                               .reduce((s, cid) => {
@@ -1809,24 +1888,51 @@ export default function InventoryPage() {
                                 if (currentAssignments.has(cid)) return s + (cashierAllocations[cid] ?? 0)
                                 return s
                               }, 0)
-                            const maxForThis = Math.max(0, totalStock - otherTotal)
-                            const thisVal = parseInt(distributionQuantities[cashier.id] || '0', 10)
-                            const isOver = thisVal > maxForThis
+                            const maxForThis = Math.max(0, singleDistStock - otherTotal)
+                            const thisVal = qtyOf(cashier.id)
+                            const canInc = thisVal < maxForThis
                             return (
-                              <input
-                                type="number"
-                                min="0"
-                                step="1"
-                                max={totalStock === Infinity ? undefined : maxForThis}
-                                placeholder="Qty"
-                                value={distributionQuantities[cashier.id] ?? ''}
-                                onChange={(e) => {
-                                  e.stopPropagation()
-                                  setDistributionQuantities(prev => ({ ...prev, [cashier.id]: e.target.value }))
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                                className={`w-16 h-7 text-xs text-center border rounded-md bg-background font-semibold shrink-0 focus:outline-none focus:ring-1 ${isOver ? 'border-red-500 ring-red-300 text-red-600' : 'focus:ring-primary'}`}
-                              />
+                              <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                {canInc && (
+                                  <button
+                                    type="button"
+                                    onClick={() => maxOutCashier(cashier.id)}
+                                    className="text-[10px] font-bold text-primary hover:underline"
+                                    title="Give the rest of the stock to this cashier"
+                                  >
+                                    Max
+                                  </button>
+                                )}
+                                <div className="flex items-center border rounded-lg overflow-hidden bg-background">
+                                  <button
+                                    type="button"
+                                    aria-label="Decrease quantity"
+                                    disabled={thisVal <= 0}
+                                    onClick={() => setCashierQty(cashier.id, thisVal - 1)}
+                                    className="w-7 h-7 grid place-items-center text-base leading-none hover:bg-primary/10 hover:text-primary disabled:text-muted-foreground/40 disabled:hover:bg-transparent transition-colors"
+                                  >
+                                    −
+                                  </button>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={maxForThis}
+                                    value={distributionQuantities[cashier.id] ?? ''}
+                                    placeholder="0"
+                                    onChange={(e) => setCashierQty(cashier.id, parseInt(e.target.value || '0', 10))}
+                                    className={`w-11 h-7 text-xs text-center font-bold bg-background border-x focus:outline-none tabular-nums ${thisVal > maxForThis ? 'text-red-600' : ''}`}
+                                  />
+                                  <button
+                                    type="button"
+                                    aria-label="Increase quantity"
+                                    disabled={!canInc}
+                                    onClick={() => setCashierQty(cashier.id, thisVal + 1)}
+                                    className="w-7 h-7 grid place-items-center text-base leading-none hover:bg-primary/10 hover:text-primary disabled:text-muted-foreground/40 disabled:hover:bg-transparent transition-colors"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
                             )
                           })()}
                           {/* Status pills — manage mode only */}
