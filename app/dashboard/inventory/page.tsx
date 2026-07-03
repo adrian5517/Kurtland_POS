@@ -2079,12 +2079,37 @@ export default function InventoryPage() {
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <Card className="w-full max-w-md shadow-lg rounded-2xl">
             <CardHeader className="border-b pb-4">
-              <CardTitle className="flex items-center gap-2">
-                <Package className="h-5 w-5" />
-                Select Products to Distribute
-              </CardTitle>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle className="flex items-center gap-2">
+                  <Package className="h-5 w-5" />
+                  Select Products to Distribute
+                </CardTitle>
+                {(() => {
+                  const q = distributionSearch.trim().toLowerCase()
+                  const filtered = inventory.filter(p => !q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q))
+                  if (filtered.length === 0) return null
+                  const allSelected = filtered.every(p => selectedDistributionProducts.has(p.id))
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDistributionProducts(prev => {
+                        const next = new Set(prev)
+                        if (allSelected) filtered.forEach(p => next.delete(p.id))
+                        else filtered.forEach(p => next.add(p.id))
+                        return next
+                      })}
+                      className="text-xs font-semibold text-primary hover:underline shrink-0"
+                    >
+                      {allSelected ? 'Clear all' : 'Select all'}
+                    </button>
+                  )
+                })()}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1.5">
+                Grants cashier access to the selected products — you'll set each product's quantities afterward.
+              </p>
               {selectedDistributionProducts.size > 0 && (
-                <p className="text-sm text-primary mt-2 font-medium">{selectedDistributionProducts.size} product(s) selected</p>
+                <p className="text-sm text-primary mt-2 font-medium">{selectedDistributionProducts.size} product{selectedDistributionProducts.size !== 1 ? 's' : ''} selected</p>
               )}
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
@@ -2095,23 +2120,27 @@ export default function InventoryPage() {
                 className="rounded-lg"
               />
               <div className="max-h-64 overflow-y-auto space-y-2">
-                {inventory
-                  .filter(p => 
-                    p.name.toLowerCase().includes(distributionSearch.toLowerCase()) ||
-                    p.code.toLowerCase().includes(distributionSearch.toLowerCase())
-                  )
-                  .map(product => {
+                {(() => {
+                  const q = distributionSearch.trim().toLowerCase()
+                  const filtered = inventory.filter(p => !q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q))
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="flex flex-col items-center gap-2 py-10 text-sm text-muted-foreground">
+                        <Package className="h-8 w-8 opacity-30" />
+                        <span>No products match your search.</span>
+                      </div>
+                    )
+                  }
+                  return filtered.map(product => {
                     const isSelected = selectedDistributionProducts.has(product.id)
+                    const lowStock = product.currentStock <= product.minStock
                     return (
                       <button
                         key={product.id}
                         onClick={() => {
                           const newSet = new Set(selectedDistributionProducts)
-                          if (newSet.has(product.id)) {
-                            newSet.delete(product.id)
-                          } else {
-                            newSet.add(product.id)
-                          }
+                          if (newSet.has(product.id)) newSet.delete(product.id)
+                          else newSet.add(product.id)
                           setSelectedDistributionProducts(newSet)
                         }}
                         className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
@@ -2120,27 +2149,29 @@ export default function InventoryPage() {
                             : 'border-transparent hover:border-primary/30 hover:bg-primary/5'
                         }`}
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 flex-1">
-                            <div className={`h-5 w-5 rounded border-2 flex items-center justify-center transition-colors ${
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className={`h-5 w-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
                               isSelected
                                 ? 'border-primary bg-primary'
                                 : 'border-muted-foreground'
                             }`}>
                               {isSelected && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
                             </div>
-                            <div>
-                              <p className="font-medium text-sm">{product.name}</p>
+                            <div className="min-w-0">
+                              <p className="font-medium text-sm truncate">{product.name}</p>
                               <p className="text-xs text-muted-foreground">{product.code}</p>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-xs font-semibold text-primary">₱{product.minPrice.toFixed(2)}</p>
+                          <div className="text-right shrink-0">
+                            <p className={`text-sm font-bold tabular-nums ${lowStock ? 'text-red-600' : 'text-foreground'}`}>{product.currentStock}</p>
+                            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">in stock</p>
                           </div>
                         </div>
                       </button>
                     )
-                  })}
+                  })
+                })()}
               </div>
               <div className="flex gap-2">
                 <Button
@@ -2163,7 +2194,9 @@ export default function InventoryPage() {
                   className="flex-1 rounded-lg"
                   disabled={selectedDistributionProducts.size === 0}
                 >
-                  Distribute Selected
+                  {selectedDistributionProducts.size > 0
+                    ? `Distribute ${selectedDistributionProducts.size} product${selectedDistributionProducts.size !== 1 ? 's' : ''}`
+                    : 'Distribute Selected'}
                 </Button>
                 <Button
                   onClick={() => {
