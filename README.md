@@ -47,10 +47,7 @@ Backend services:
 - PostgreSQL: localhost:5432
 - pgAdmin: http://localhost:5051
 
-pgAdmin default login:
-
-- Email: admin@kurtland.com
-- Password: admin
+pgAdmin default
 
 ## Useful Commands
 
